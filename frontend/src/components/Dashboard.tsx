@@ -281,7 +281,7 @@ export default function Dashboard() {
     isLoading: paymentsLoading,
   } = useQuery<PaymentWithFarmer[]>({
     queryKey: ['payments'],
-    queryFn: getPayments,
+    queryFn: () => getPayments(),
     refetchInterval: 30_000,
   })
 

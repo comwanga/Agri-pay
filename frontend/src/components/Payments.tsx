@@ -298,7 +298,7 @@ export default function Payments() {
 
   const { data: payments = [], isLoading } = useQuery<PaymentWithFarmer[]>({
     queryKey: ['payments'],
-    queryFn: getPayments,
+    queryFn: () => getPayments(),
     refetchInterval: 15_000,
   })
 
