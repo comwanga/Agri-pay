@@ -119,12 +119,11 @@ pub async fn request_withdrawal(
     struct BalanceLock {
         available_sats: i64,
     }
-    let balance: Option<BalanceLock> = sqlx::query_as(
-        "SELECT available_sats FROM balances WHERE farmer_id = $1 FOR UPDATE",
-    )
-    .bind(farmer_id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let balance: Option<BalanceLock> =
+        sqlx::query_as("SELECT available_sats FROM balances WHERE farmer_id = $1 FOR UPDATE")
+            .bind(farmer_id)
+            .fetch_optional(&mut *tx)
+            .await?;
 
     let available = balance.map(|b| b.available_sats).unwrap_or(0);
     if available < amount_sats {
@@ -185,13 +184,14 @@ async fn get_rate_with_staleness_check(state: &SharedState) -> AppResult<Decimal
     .await?;
 
     if let Some(r) = row {
-        let age = Utc::now()
-            .signed_duration_since(r.fetched_at)
-            .num_seconds() as u64;
+        let age = Utc::now().signed_duration_since(r.fetched_at).num_seconds() as u64;
         if age <= state.config.max_rate_stale_secs {
             return Ok(r.btc_kes);
         }
-        tracing::warn!(age_secs = age, "Withdrawal: cached rate is stale, fetching live rate");
+        tracing::warn!(
+            age_secs = age,
+            "Withdrawal: cached rate is stale, fetching live rate"
+        );
     }
 
     // Cache empty or stale — fetch live rate.

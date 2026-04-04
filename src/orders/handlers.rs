@@ -121,7 +121,9 @@ pub async fn fill_order(
     }
 
     #[derive(FromRow)]
-    struct OrderStatus { status: String }
+    struct OrderStatus {
+        status: String,
+    }
     let row: Option<OrderStatus> = sqlx::query_as("SELECT status FROM orders WHERE id = $1")
         .bind(id)
         .fetch_optional(&state.db)
@@ -160,13 +162,15 @@ pub async fn cancel_order(
     let farmer_id = claims.farmer_id;
 
     #[derive(FromRow)]
-    struct OrderOwner { farmer_id: Uuid, status: String }
-    let row: Option<OrderOwner> = sqlx::query_as(
-        "SELECT farmer_id, status FROM orders WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await?;
+    struct OrderOwner {
+        farmer_id: Uuid,
+        status: String,
+    }
+    let row: Option<OrderOwner> =
+        sqlx::query_as("SELECT farmer_id, status FROM orders WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await?;
 
     let row = row.ok_or_else(|| AppError::NotFound(format!("Order {} not found", id)))?;
     let order_farmer_id = row.farmer_id;

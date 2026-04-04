@@ -78,8 +78,7 @@ impl Config {
 
         let webhook_secret =
             std::env::var("WEBHOOK_SECRET").unwrap_or_else(|_| "dev-webhook-secret".into());
-        let base_url =
-            std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:3001".into());
+        let base_url = std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:3001".into());
 
         let mpesa_result_url = std::env::var("MPESA_RESULT_URL").unwrap_or_else(|_| {
             format!("{}/api/webhooks/mpesa/{}/result", base_url, webhook_secret)
@@ -123,8 +122,7 @@ impl Config {
                 .unwrap_or_else(|_| "3001".into())
                 .parse()
                 .context("Invalid PORT")?,
-            database_url: std::env::var("DATABASE_URL")
-                .context("DATABASE_URL is required")?,
+            database_url: std::env::var("DATABASE_URL").context("DATABASE_URL is required")?,
             btcpay_url: std::env::var("BTCPAY_URL")
                 .unwrap_or_else(|_| "http://localhost:14142".into()),
             btcpay_api_key: std::env::var("BTCPAY_API_KEY").unwrap_or_default(),

@@ -167,7 +167,10 @@ pub async fn update_farmer(
     }
 
     #[derive(FromRow)]
-    struct FarmerCheck { #[allow(dead_code)] id: Uuid }
+    struct FarmerCheck {
+        #[allow(dead_code)]
+        id: Uuid,
+    }
     let exists: Option<FarmerCheck> = sqlx::query_as("SELECT id FROM farmers WHERE id = $1")
         .bind(id)
         .fetch_optional(&state.db)

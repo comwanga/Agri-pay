@@ -164,7 +164,10 @@ pub async fn mpesa_result(
                 "M-Pesa B2C failed — sats refunded to farmer"
             );
         } else {
-            tracing::info!(originator_id, "M-Pesa failure callback: withdrawal not found or already settled");
+            tracing::info!(
+                originator_id,
+                "M-Pesa failure callback: withdrawal not found or already settled"
+            );
         }
     }
 

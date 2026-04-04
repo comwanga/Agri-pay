@@ -129,8 +129,8 @@ fn encrypt_rsa_pkcs1v15(plaintext: &str, pem_path: &str) -> Result<String> {
 
     let pem = std::fs::read_to_string(pem_path)
         .with_context(|| format!("Cannot read M-Pesa cert at '{}'", pem_path))?;
-    let public_key = RsaPublicKey::from_public_key_pem(&pem)
-        .context("Failed to parse M-Pesa public key PEM")?;
+    let public_key =
+        RsaPublicKey::from_public_key_pem(&pem).context("Failed to parse M-Pesa public key PEM")?;
     let encrypted = public_key
         .encrypt(&mut OsRng, Pkcs1v15Encrypt, plaintext.as_bytes())
         .context("RSA encryption failed")?;

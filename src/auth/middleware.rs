@@ -17,8 +17,9 @@ impl FromRequestParts<SharedState> for Claims {
         parts: &mut Parts,
         state: &SharedState,
     ) -> Result<Self, Self::Rejection> {
-        let token = extract_bearer(&parts.headers)
-            .ok_or_else(|| AppError::Unauthorized("Missing or malformed Authorization header".into()))?;
+        let token = extract_bearer(&parts.headers).ok_or_else(|| {
+            AppError::Unauthorized("Missing or malformed Authorization header".into())
+        })?;
 
         let claims = validate_token(&state.config.jwt_secret, token)?;
         Ok(claims)
@@ -26,6 +27,9 @@ impl FromRequestParts<SharedState> for Claims {
 }
 
 fn extract_bearer(headers: &HeaderMap) -> Option<&str> {
-    let value = headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
+    let value = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
     value.strip_prefix("Bearer ")
 }

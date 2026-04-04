@@ -224,7 +224,12 @@ pub async fn create_payment(
     );
 
     let invoice_result = btcpay
-        .create_invoice(amount_sats, &description, Some(&payment_id.to_string()), None)
+        .create_invoice(
+            amount_sats,
+            &description,
+            Some(&payment_id.to_string()),
+            None,
+        )
         .await;
 
     let (status, btcpay_invoice_id, btcpay_payment_url, failure_reason) = match invoice_result {
@@ -385,9 +390,7 @@ async fn get_or_fetch_rate(state: &SharedState) -> AppResult<Decimal> {
     .await?;
 
     if let Some(r) = row {
-        let age = Utc::now()
-            .signed_duration_since(r.fetched_at)
-            .num_seconds() as u64;
+        let age = Utc::now().signed_duration_since(r.fetched_at).num_seconds() as u64;
         if age <= state.config.max_rate_stale_secs {
             return Ok(r.btc_kes);
         }

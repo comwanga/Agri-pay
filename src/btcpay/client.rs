@@ -73,10 +73,7 @@ impl BtcPayClient {
             },
         };
 
-        let url = format!(
-            "{}/api/v1/stores/{}/invoices",
-            self.base_url, self.store_id
-        );
+        let url = format!("{}/api/v1/stores/{}/invoices", self.base_url, self.store_id);
 
         let resp = self
             .http

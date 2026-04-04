@@ -82,7 +82,10 @@ pub async fn get_rate(State(state): State<SharedState>) -> AppResult<Json<RateRe
                     fetched_at: row.fetched_at,
                     live: false,
                 })),
-                None => Err(AppError::Oracle(format!("Exchange rate unavailable: {}", e))),
+                None => Err(AppError::Oracle(format!(
+                    "Exchange rate unavailable: {}",
+                    e
+                ))),
             }
         }
     }

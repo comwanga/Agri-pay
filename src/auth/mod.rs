@@ -69,12 +69,11 @@ pub async fn login(
     }
 
     // 2. Users table (operator / admin accounts)
-    let user: Option<UserRow> = sqlx::query_as(
-        "SELECT id, password_hash, role, farmer_id FROM users WHERE username = $1",
-    )
-    .bind(&body.username)
-    .fetch_optional(&state.db)
-    .await?;
+    let user: Option<UserRow> =
+        sqlx::query_as("SELECT id, password_hash, role, farmer_id FROM users WHERE username = $1")
+            .bind(&body.username)
+            .fetch_optional(&state.db)
+            .await?;
 
     if let Some(user) = user {
         let valid = bcrypt::verify(&body.password, &user.password_hash)

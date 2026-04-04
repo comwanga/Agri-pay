@@ -10,13 +10,11 @@ pub async fn record_event(
     event_type: &str,
     data: Value,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "INSERT INTO payment_events (payment_id, event_type, data) VALUES ($1, $2, $3)",
-    )
-    .bind(payment_id)
-    .bind(event_type)
-    .bind(data)
-    .execute(pool)
-    .await?;
+    sqlx::query("INSERT INTO payment_events (payment_id, event_type, data) VALUES ($1, $2, $3)")
+        .bind(payment_id)
+        .bind(event_type)
+        .bind(data)
+        .execute(pool)
+        .await?;
     Ok(())
 }

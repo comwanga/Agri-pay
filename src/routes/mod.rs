@@ -43,7 +43,10 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
     // ── Wallet ────────────────────────────────────────────────────────────────
     let wallet_routes = Router::new()
         .route("/wallet/balance", get(wallet_handlers::get_balance))
-        .route("/wallet/withdraw", post(wallet_handlers::request_withdrawal));
+        .route(
+            "/wallet/withdraw",
+            post(wallet_handlers::request_withdrawal),
+        );
 
     // ── Orders ────────────────────────────────────────────────────────────────
     let order_routes = Router::new()
@@ -59,7 +62,10 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
 
     // ── Webhooks (no JWT — their own auth mechanisms) ────────────────────────
     let webhook_routes = Router::new()
-        .route("/webhooks/btcpay", post(btcpay_webhook::handle_btcpay_webhook))
+        .route(
+            "/webhooks/btcpay",
+            post(btcpay_webhook::handle_btcpay_webhook),
+        )
         .route(
             "/webhooks/mpesa/:secret/result",
             post(mpesa_webhook::mpesa_result),

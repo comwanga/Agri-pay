@@ -1,13 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::events;
 use crate::state::SharedState;
-use axum::{
-    body::Bytes,
-    extract::State,
-    http::HeaderMap,
-    response::IntoResponse,
-    Json,
-};
+use axum::{body::Bytes, extract::State, http::HeaderMap, response::IntoResponse, Json};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
