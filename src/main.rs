@@ -1,26 +1,31 @@
+mod auth;
+mod btcpay;
 mod config;
 mod db;
 mod error;
-mod lightning;
-mod models;
+mod events;
+mod farmers;
 mod mpesa;
 mod oracle;
+mod orders;
+mod payments;
+mod reconciliation;
 mod routes;
 mod state;
+mod wallet;
 
 use anyhow::Result;
 use axum::{
     http::{HeaderValue, Method},
     Router,
 };
+use reqwest::Client;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::Config;
-use crate::db::Database;
-use crate::lightning::LightningNode;
 use crate::mpesa::MpesaClient;
 use crate::oracle::RateOracle;
 use crate::state::AppState;
@@ -32,7 +37,6 @@ async fn main() -> Result<()> {
     let config = Config::from_env()?;
 
     // ── Logging ───────────────────────────────────────────────────────────────
-    // D-4: emit JSON in production (LOG_FORMAT=json), human-readable text in dev.
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| "agri_pay=debug,tower_http=debug".into());
 
@@ -50,32 +54,34 @@ async fn main() -> Result<()> {
 
     tracing::info!("Starting agri-pay v{}", env!("CARGO_PKG_VERSION"));
 
+    // ── Shared HTTP client ────────────────────────────────────────────────────
+    let http = Client::builder()
+        .use_rustls_tls()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+
     // ── Database ──────────────────────────────────────────────────────────────
-    let db = Database::new(&config.database_url).await?;
-    db.run_migrations().await?;
+    let pool = db::create_pool(&config.database_url).await?;
+    db::run_migrations(&pool).await?;
+    tracing::info!("Database connected and migrations applied");
 
-    // ── Lightning node ────────────────────────────────────────────────────────
-    // Q-2: new() is sync — no async needed.
-    let lightning = LightningNode::new(&config)?;
-    lightning.start()?;
-    tracing::info!("Lightning node started. Node ID: {}", lightning.node_id());
-
-    // ── External services ─────────────────────────────────────────────────────
-    let mpesa = MpesaClient::new(&config);
-    let oracle = RateOracle::new(&config);
+    // ── Build shared state ────────────────────────────────────────────────────
+    let mpesa = MpesaClient::new(&config, http.clone());
+    let oracle = RateOracle::new(&config, http.clone());
 
     let state = Arc::new(AppState {
-        db,
-        lightning,
+        db: pool,
+        config: config.clone(),
+        http,
         mpesa,
         oracle,
-        config: config.clone(),
     });
 
-    // ── Background: Lightning payment event monitor (B-4) ─────────────────────
-    lightning::monitor::spawn(state.clone());
+    // ── Background workers ────────────────────────────────────────────────────
+    reconciliation::worker::spawn_workers(state.clone());
+    tracing::info!("Background workers started");
 
-    // ── CORS (S-4: restrict to configured origins) ────────────────────────────
+    // ── CORS ──────────────────────────────────────────────────────────────────
     let cors = build_cors(&config);
 
     // ── Router ────────────────────────────────────────────────────────────────
@@ -85,7 +91,6 @@ async fn main() -> Result<()> {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    // Q-1: use config.host and config.port (not hardcoded "0.0.0.0:3001").
     let addr = format!("{}:{}", config.host, config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("Listening on http://{}", addr);
@@ -101,6 +106,7 @@ fn build_cors(config: &Config) -> CorsLayer {
         Method::PUT,
         Method::DELETE,
         Method::OPTIONS,
+        Method::PATCH,
     ];
 
     let mut layer = CorsLayer::new().allow_methods(methods);
@@ -121,6 +127,5 @@ fn build_cors(config: &Config) -> CorsLayer {
     layer.allow_headers([
         axum::http::header::CONTENT_TYPE,
         axum::http::header::AUTHORIZATION,
-        axum::http::header::HeaderName::from_static("x-api-key"),
     ])
 }

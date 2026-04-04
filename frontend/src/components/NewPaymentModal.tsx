@@ -134,8 +134,9 @@ interface SuccessScreenProps {
 function SuccessScreen({ result, farmerName, onClose }: SuccessScreenProps) {
   const [copied, setCopied] = useState(false)
 
-  function copyOffer() {
-    navigator.clipboard.writeText(result.bolt12_offer).then(() => {
+  function copyInvoice() {
+    if (!result.bolt11_invoice) return
+    navigator.clipboard.writeText(result.bolt11_invoice).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
@@ -150,7 +151,7 @@ function SuccessScreen({ result, farmerName, onClose }: SuccessScreenProps) {
         </div>
         <h3 className="text-base font-semibold text-gray-100 mb-1">Payment Created!</h3>
         <p className="text-sm text-gray-400">
-          Share the BOLT12 offer with the buyer to receive payment via Lightning.
+          Share the Lightning invoice with the buyer to receive payment.
         </p>
       </div>
 
@@ -181,52 +182,60 @@ function SuccessScreen({ result, farmerName, onClose }: SuccessScreenProps) {
       </div>
 
       {/* QR Code */}
-      <div className="flex flex-col items-center mb-5">
-        <p className="text-xs text-gray-500 mb-3">BOLT12 Offer QR Code</p>
-        <div className="bg-white p-3 rounded-xl shadow-lg">
-          <QRCodeSVG
-            value={result.bolt12_offer}
-            size={200}
-            level="M"
-            includeMargin={false}
-          />
-        </div>
-        <p className="text-[11px] text-gray-600 mt-2 text-center">
-          Scan with a Lightning wallet that supports BOLT12
-        </p>
-      </div>
+      {result.bolt11_invoice ? (
+        <>
+          <div className="flex flex-col items-center mb-5">
+            <p className="text-xs text-gray-500 mb-3">BOLT11 Invoice QR Code</p>
+            <div className="bg-white p-3 rounded-xl shadow-lg">
+              <QRCodeSVG
+                value={`LIGHTNING:${result.bolt11_invoice.toUpperCase()}`}
+                size={200}
+                level="M"
+                includeMargin={false}
+              />
+            </div>
+            <p className="text-[11px] text-gray-600 mt-2 text-center">
+              Scan with Phoenix, Muun, Zeus or any BOLT11 wallet
+            </p>
+          </div>
 
-      {/* Offer string */}
-      <div className="bg-gray-800 rounded-xl border border-gray-700 p-3 mb-5">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-            BOLT12 Offer
-          </span>
-          <button
-            onClick={copyOffer}
-            className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
-              copied
-                ? 'bg-mpesa/20 text-mpesa border border-green-600/30'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
-            }`}
-          >
-            {copied ? (
-              <>
-                <CheckCircle2 className="w-3 h-3" />
-                Copied!
-              </>
-            ) : (
-              <>
-                <Copy className="w-3 h-3" />
-                Copy
-              </>
-            )}
-          </button>
+          {/* Invoice string */}
+          <div className="bg-gray-800 rounded-xl border border-gray-700 p-3 mb-5">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                Invoice
+              </span>
+              <button
+                onClick={copyInvoice}
+                className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                  copied
+                    ? 'bg-mpesa/20 text-mpesa border border-green-600/30'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
+                }`}
+              >
+                {copied ? (
+                  <>
+                    <CheckCircle2 className="w-3 h-3" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3" />
+                    Copy
+                  </>
+                )}
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-500 font-mono break-all leading-relaxed">
+              {result.bolt11_invoice}
+            </p>
+          </div>
+        </>
+      ) : (
+        <div className="flex items-center gap-3 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-gray-500 mb-5">
+          No invoice available — Lightning node may be offline.
         </div>
-        <p className="text-[11px] text-gray-500 font-mono break-all leading-relaxed">
-          {result.bolt12_offer}
-        </p>
-      </div>
+      )}
 
       <button onClick={onClose} className="btn-secondary w-full justify-center">
         Done
@@ -343,7 +352,7 @@ export default function NewPaymentModal({ onClose, onSuccess }: NewPaymentModalP
             <div>
               <h2 className="text-base font-semibold text-gray-100">New Payment</h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                Create a Lightning BOLT12 offer for a farmer
+                Create a Lightning invoice for a farmer
               </p>
             </div>
           </div>

@@ -1,0 +1,6 @@
+# On Windows, cargo can't overwrite a running .exe.
+# This setting causes cargo to swap in the new binary rather than overwrite in place,
+# which avoids "Access denied (os error 5)" when a previous run is still active.
+[build]
+# Use a separate incremental cache dir to reduce stale-lock probability
+incremental = true

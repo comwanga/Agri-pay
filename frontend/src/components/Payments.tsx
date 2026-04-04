@@ -79,19 +79,19 @@ const FILTERS: { label: string; value: FilterValue }[] = [
   { label: 'Failed', value: 'failed' },
 ]
 
-// ─── BOLT12 Modal ─────────────────────────────────────────────────────────────
+// ─── BOLT11 Invoice Modal ─────────────────────────────────────────────────────
 
-interface Bolt12ModalProps {
+interface InvoiceModalProps {
   payment: PaymentWithFarmer
   onClose: () => void
 }
 
-function Bolt12Modal({ payment, onClose }: Bolt12ModalProps) {
+function InvoiceModal({ payment, onClose }: InvoiceModalProps) {
   const [copied, setCopied] = useState(false)
 
-  function copyOffer() {
-    if (!payment.bolt12_offer) return
-    navigator.clipboard.writeText(payment.bolt12_offer).then(() => {
+  function copyInvoice() {
+    if (!payment.bolt11_invoice) return
+    navigator.clipboard.writeText(payment.bolt11_invoice).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
@@ -107,7 +107,7 @@ function Bolt12Modal({ payment, onClose }: Bolt12ModalProps) {
               <Zap className="w-4 h-4 text-amber-400" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-gray-100">BOLT12 Offer</h2>
+              <h2 className="text-base font-semibold text-gray-100">Lightning Invoice (BOLT11)</h2>
               <p className="text-xs text-gray-500 mt-0.5">
                 {payment.farmer_name} · {fmtKes(payment.amount_kes)} KES
               </p>
@@ -151,31 +151,31 @@ function Bolt12Modal({ payment, onClose }: Bolt12ModalProps) {
           </div>
 
           {/* QR Code */}
-          {payment.bolt12_offer ? (
+          {payment.bolt11_invoice ? (
             <>
               <div className="flex flex-col items-center">
                 <p className="text-xs text-gray-500 mb-3">Scan to pay via Lightning</p>
                 <div className="bg-white p-4 rounded-xl shadow-lg">
                   <QRCodeSVG
-                    value={`LIGHTNING:${payment.bolt12_offer.toUpperCase()}`}
+                    value={`LIGHTNING:${payment.bolt11_invoice.toUpperCase()}`}
                     size={240}
                     level="M"
                     includeMargin={false}
                   />
                 </div>
                 <p className="text-[11px] text-gray-600 mt-2 text-center">
-                  Compatible with Phoenix, Mutiny &amp; other BOLT12 wallets
+                  Compatible with Phoenix, Muun, Zeus &amp; all BOLT11 wallets
                 </p>
               </div>
 
-              {/* Offer string */}
+              {/* Invoice string */}
               <div className="bg-gray-800 rounded-xl border border-gray-700 p-3">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-                    Offer String
+                    Invoice
                   </span>
                   <button
-                    onClick={copyOffer}
+                    onClick={copyInvoice}
                     className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
                       copied
                         ? 'bg-mpesa/20 text-mpesa border border-green-600/30'
@@ -196,14 +196,14 @@ function Bolt12Modal({ payment, onClose }: Bolt12ModalProps) {
                   </button>
                 </div>
                 <p className="text-[11px] text-gray-500 font-mono break-all leading-relaxed">
-                  {payment.bolt12_offer}
+                  {payment.bolt11_invoice}
                 </p>
               </div>
             </>
           ) : (
             <div className="flex items-center gap-3 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-gray-500">
               <AlertCircle className="w-4 h-4 shrink-0" />
-              No BOLT12 offer available for this payment.
+              No invoice available for this payment.
             </div>
           )}
 
@@ -289,7 +289,7 @@ function DisburseDialog({ payment, onConfirm, onCancel, isPending }: DisburseDia
 export default function Payments() {
   const [filter, setFilter] = useState<FilterValue>('all')
   const [showNewPayment, setShowNewPayment] = useState(false)
-  const [bolt12Payment, setBolt12Payment] = useState<PaymentWithFarmer | null>(null)
+  const [invoicePayment, setInvoicePayment] = useState<PaymentWithFarmer | null>(null)
   const [disburseTarget, setDisburseTarget] = useState<PaymentWithFarmer | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
 
@@ -330,7 +330,7 @@ export default function Payments() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setBolt12Payment(null)
+        setInvoicePayment(null)
         setDisburseTarget(null)
         setShowNewPayment(false)
       }
@@ -410,7 +410,7 @@ export default function Payments() {
                 <>
                   <p className="text-sm font-medium text-gray-400">No payments yet</p>
                   <p className="text-xs text-gray-600 mt-1 mb-4">
-                    Create a payment to generate a Lightning BOLT12 offer
+                    Create a payment to generate a BOLT11 Lightning invoice
                   </p>
                   <button
                     onClick={() => setShowNewPayment(true)}
@@ -509,14 +509,14 @@ export default function Payments() {
                       {/* Actions */}
                       <td>
                         <div className="flex items-center gap-1.5">
-                          {/* View BOLT12 for pending payments that have an offer */}
-                          {p.status === 'pending' && p.bolt12_offer && (
+                          {/* View BOLT11 invoice for pending payments */}
+                          {p.status === 'pending' && p.bolt11_invoice && (
                             <button
-                              onClick={() => setBolt12Payment(p)}
+                              onClick={() => setInvoicePayment(p)}
                               className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-lg border border-amber-500/20 transition-colors"
                             >
                               <Eye className="w-3 h-3" />
-                              BOLT12
+                              Invoice
                             </button>
                           )}
 
@@ -583,8 +583,8 @@ export default function Payments() {
         />
       )}
 
-      {bolt12Payment && (
-        <Bolt12Modal payment={bolt12Payment} onClose={() => setBolt12Payment(null)} />
+      {invoicePayment && (
+        <InvoiceModal payment={invoicePayment} onClose={() => setInvoicePayment(null)} />
       )}
 
       {disburseTarget && (

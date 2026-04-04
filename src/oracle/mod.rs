@@ -1,3 +1,4 @@
 mod rate;
-pub use rate::ExchangeRate;
+pub mod handlers;
+
 pub use rate::RateOracle;

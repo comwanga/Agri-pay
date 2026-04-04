@@ -1,8 +1,8 @@
 [package]
 name = "agri-pay"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.75"
 
 [[bin]]
 name = "agri-pay"
@@ -13,42 +13,57 @@ path = "src/main.rs"
 tokio = { version = "1", features = ["full"] }
 
 # Web framework
-axum = { version = "0.7", features = ["ws", "macros"] }
+axum = { version = "0.7", features = ["macros"] }
 tower = { version = "0.4", features = ["limit"] }
-tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "limit"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Database
-# rusqlite 0.31 matches ldk-node 0.7's internal rusqlite dep so Cargo
-# deduplicates to a single libsqlite3-sys instance (no links conflict).
-# "bundled" compiles SQLite from source — no system sqlite3 required (good on Windows).
-rusqlite = { version = "0.31", features = ["bundled"] }
-tokio-rusqlite = "0.5"
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "uuid", "chrono", "json", "migrate", "rust_decimal"] }
+
+# UUIDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
 
-# Bitcoin / Lightning
-ldk-node = "0.7"
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
-# RSA encryption for M-Pesa production SecurityCredential
+# Env loading
+dotenvy = "0.15"
+
+# JWT
+jsonwebtoken = "9"
+
+# Decimal arithmetic
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+rust_decimal_macros = "1"
+
+# Crypto
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+subtle = "2"
+base64 = "0.21"
+
+# RSA for M-Pesa production SecurityCredential
 rsa = "0.9"
 rand_core = { version = "0.6", features = ["getrandom"] }
 
-# Utils
-uuid = { version = "1", features = ["v4"] }
-chrono = "0.4"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-anyhow = "1"
+# Error handling
 thiserror = "1"
-dotenvy = "0.15"
-base64 = "0.22"
-tokio-stream = "0.1"
+anyhow = "1"
+
+# Password hashing
+bcrypt = "0.15"
 
 [dev-dependencies]
-axum-test = "14"
 tokio = { version = "1", features = ["full", "test-util"] }

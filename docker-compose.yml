@@ -1,39 +1,60 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: agripay
+      POSTGRES_PASSWORD: agripay_dev
+      POSTGRES_DB: agri_pay
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agripay -d agri_pay"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
       - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
-      - RUST_LOG=agri_pay=info,tower_http=info
-      - LOG_FORMAT=json
-      - DATABASE_URL=sqlite:///data/agri-pay.db
-      - BITCOIN_NETWORK=${BITCOIN_NETWORK:-regtest}
-      - LDK_DATA_DIR=/data/ldk
-      - MPESA_ENV=${MPESA_ENV:-sandbox}
-      - MPESA_CONSUMER_KEY=${MPESA_CONSUMER_KEY}
-      - MPESA_CONSUMER_SECRET=${MPESA_CONSUMER_SECRET}
-      - MPESA_SHORTCODE=${MPESA_SHORTCODE:-600998}
-      - MPESA_INITIATOR_NAME=${MPESA_INITIATOR_NAME:-testapi}
-      - MPESA_INITIATOR_PASSWORD=${MPESA_INITIATOR_PASSWORD}
-      - MPESA_CERT_PATH=${MPESA_CERT_PATH:-}
-      - BASE_URL=${BASE_URL:-http://localhost:3001}
-      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-change-me-in-production}
-      - API_KEY=${API_KEY:-}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173}
-      - RATE_CACHE_SECONDS=${RATE_CACHE_SECONDS:-60}
-    volumes:
-      - agri_data:/data
+      DATABASE_URL: postgresql://agripay:agripay_dev@postgres:5432/agri_pay
+      RUST_LOG: agri_pay=info,tower_http=info
+      LOG_FORMAT: json
+      BTCPAY_URL: ${BTCPAY_URL:-http://localhost}
+      BTCPAY_API_KEY: ${BTCPAY_API_KEY:-placeholder}
+      BTCPAY_STORE_ID: ${BTCPAY_STORE_ID:-placeholder}
+      BTCPAY_WEBHOOK_SECRET: ${BTCPAY_WEBHOOK_SECRET:-dev-btcpay-secret}
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production-min-32-chars}
+      JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-24}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
+      MPESA_ENV: ${MPESA_ENV:-sandbox}
+      MPESA_CONSUMER_KEY: ${MPESA_CONSUMER_KEY:-placeholder}
+      MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET:-placeholder}
+      MPESA_SHORTCODE: ${MPESA_SHORTCODE:-600998}
+      MPESA_INITIATOR_NAME: ${MPESA_INITIATOR_NAME:-testapi}
+      MPESA_INITIATOR_PASSWORD: ${MPESA_INITIATOR_PASSWORD:-Safaricom999!*!}
+      BASE_URL: ${BASE_URL:-http://localhost:3001}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-webhook-secret}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      RATE_CACHE_SECONDS: ${RATE_CACHE_SECONDS:-60}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
   frontend:
     image: node:20-alpine
@@ -44,11 +65,10 @@ services:
     volumes:
       - ./frontend:/app
     environment:
-      - VITE_API_URL=http://localhost:3001
-      - VITE_API_KEY=${API_KEY:-}
+      VITE_API_URL: http://localhost:3001
     depends_on:
       backend:
         condition: service_healthy
 
 volumes:
-  agri_data:
+  pg_data:

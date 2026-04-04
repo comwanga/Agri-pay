@@ -18,12 +18,9 @@ pub struct MpesaClient {
 }
 
 impl MpesaClient {
-    pub fn new(config: &Config) -> Self {
+    pub fn new(config: &Config, http: Client) -> Self {
         Self {
-            http: Client::builder()
-                .use_rustls_tls()
-                .build()
-                .expect("Failed to build HTTP client"),
+            http,
             config: config.clone(),
             token_cache: Arc::new(RwLock::new(None)),
         }
@@ -58,7 +55,6 @@ impl MpesaClient {
             .await?;
 
         let expires_in: u64 = resp.expires_in.parse().unwrap_or(3600);
-        // Subtract 60 s so we refresh before the token actually expires.
         let ttl = std::time::Duration::from_secs(expires_in.saturating_sub(60));
         let mut cache = self.token_cache.write().await;
         *cache = Some(TokenCache {
@@ -71,10 +67,8 @@ impl MpesaClient {
 
     /// Generate SecurityCredential for Daraja B2C.
     ///
-    /// Sandbox: base64-encode the initiator password (Safaricom sandbox accepts this).
+    /// Sandbox: base64-encode the initiator password.
     /// Production: RSA-PKCS1v15-encrypt with Safaricom's public certificate, then base64.
-    ///   Set MPESA_CERT_PATH to the path of the PEM public key extracted from Safaricom's cert:
-    ///     openssl x509 -pubkey -noout -in SandboxCertificate.cer > pubkey.pem
     fn generate_security_credential(&self) -> Result<String> {
         if self.config.mpesa_env == "sandbox" {
             Ok(STANDARD.encode(self.config.mpesa_initiator_password.as_bytes()))
@@ -87,11 +81,12 @@ impl MpesaClient {
         }
     }
 
+    /// Send B2C payment (cash-out rail — only called for farmer withdrawals).
     pub async fn send_b2c(
         &self,
         phone: &str,
         amount_kes: u64,
-        payment_id: &str,
+        withdrawal_id: &str,
     ) -> Result<B2CResponse> {
         let token = self.get_token().await?;
         let phone_normalized = normalize_phone(phone)?;
@@ -104,7 +99,7 @@ impl MpesaClient {
             amount: amount_kes,
             party_a: self.config.mpesa_shortcode.clone(),
             party_b: phone_normalized,
-            remarks: format!("Crop payment {}", payment_id),
+            remarks: format!("Agri-Pay cash-out {}", withdrawal_id),
             queue_timeout_url: self.config.mpesa_timeout_url.clone(),
             result_url: self.config.mpesa_result_url.clone(),
             occasion: "CropPayment".into(),
@@ -128,18 +123,14 @@ impl MpesaClient {
 }
 
 /// RSA-PKCS1v15 encrypt `plaintext` using the public key at `pem_path`.
-///
-/// `pem_path` must point to a file containing a PKCS#8 SubjectPublicKeyInfo PEM
-/// (`-----BEGIN PUBLIC KEY-----`).  Extract from a Safaricom X.509 certificate with:
-///   openssl x509 -pubkey -noout -in <cert.cer> > pubkey.pem
 fn encrypt_rsa_pkcs1v15(plaintext: &str, pem_path: &str) -> Result<String> {
     use rand_core::OsRng;
     use rsa::{pkcs8::DecodePublicKey, Pkcs1v15Encrypt, RsaPublicKey};
 
     let pem = std::fs::read_to_string(pem_path)
         .with_context(|| format!("Cannot read M-Pesa cert at '{}'", pem_path))?;
-    let public_key =
-        RsaPublicKey::from_public_key_pem(&pem).context("Failed to parse M-Pesa public key PEM")?;
+    let public_key = RsaPublicKey::from_public_key_pem(&pem)
+        .context("Failed to parse M-Pesa public key PEM")?;
     let encrypted = public_key
         .encrypt(&mut OsRng, Pkcs1v15Encrypt, plaintext.as_bytes())
         .context("RSA encryption failed")?;
@@ -152,7 +143,7 @@ pub fn normalize_phone(phone: &str) -> Result<String> {
         digits
     } else if let Some(stripped) = digits.strip_prefix('0') {
         format!("254{}", stripped)
-    } else if digits.starts_with("7") || digits.starts_with("1") {
+    } else if digits.starts_with('7') || digits.starts_with('1') {
         format!("254{}", digits)
     } else {
         return Err(anyhow::anyhow!("Invalid phone number: {}", phone));
@@ -201,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_normalize_rejects_short() {
-        assert!(normalize_phone("071234567").is_err()); // 9 digits → 11 after prefix
+        assert!(normalize_phone("071234567").is_err());
     }
 
     #[test]
