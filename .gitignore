@@ -11,9 +11,8 @@ markdown.md
 # LDK node data
 ldk-data/
 
-# Environment
+# Environment — only ignore the real secrets file, not the example template
 .env
-.env.example
 
 # Frontend
 frontend/node_modules/
