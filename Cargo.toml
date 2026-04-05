@@ -53,6 +53,8 @@ sha2 = "0.10"
 hex = "0.4"
 subtle = "2"
 base64 = "0.21"
+k256 = { version = "0.13", features = ["schnorr"] }
+signature = "2"
 
 # RSA for M-Pesa production SecurityCredential
 rsa = "0.9"

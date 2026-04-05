@@ -15,7 +15,28 @@ import type {
   WithdrawRequest,
 } from '../types'
 
-const BASE = '/api'
+const BASE = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '')
+
+// ─── Nostr / Fedi types (NIP-07 window.nostr injection) ──────────────────────
+
+interface NostrEvent {
+  id: string
+  pubkey: string
+  created_at: number
+  kind: number
+  tags: string[][]
+  content: string
+  sig: string
+}
+
+declare global {
+  interface Window {
+    nostr?: {
+      getPublicKey(): Promise<string>
+      signEvent(event: Omit<NostrEvent, 'id' | 'pubkey' | 'sig'>): Promise<NostrEvent>
+    }
+  }
+}
 
 // ─── Token management ────────────────────────────────────────────────────────
 
@@ -55,8 +76,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   if (res.status === 401) {
     clearToken()
-    window.location.href = '/login'
-    throw new Error('Session expired. Please log in again.')
+    window.location.reload()  // re-triggers Nostr auto-auth in Fedi
+    throw new Error('Session expired')
   }
 
   if (!res.ok) {
@@ -87,6 +108,44 @@ export async function login(payload: LoginRequest): Promise<LoginResponse> {
 
 export function logout(): void {
   clearToken()
+}
+
+export async function nostrLogin(): Promise<LoginResponse> {
+  if (!window.nostr) {
+    throw new Error('No Nostr signer available')
+  }
+
+  const url = `${window.location.origin}/api/auth/nostr`
+  const unsignedEvent = {
+    kind: 27235,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [
+      ['u', url],
+      ['method', 'POST'],
+    ],
+    content: '',
+  }
+
+  const signedEvent = await window.nostr.signEvent(unsignedEvent)
+
+  const res = await fetch(`${BASE}/auth/nostr`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event: signedEvent }),
+  })
+
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`
+    try {
+      const body = await res.json()
+      if (body?.error) message = body.error
+    } catch { /* ignore */ }
+    throw new Error(message)
+  }
+
+  const resp: LoginResponse = await res.json()
+  setToken(resp.token)
+  return resp
 }
 
 // ─── Farmers ─────────────────────────────────────────────────────────────────

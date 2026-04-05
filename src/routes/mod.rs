@@ -17,6 +17,7 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
     // ── Auth ─────────────────────────────────────────────────────────────────
     let auth_routes = Router::new()
         .route("/auth/login", post(auth::login))
+        .route("/auth/nostr", post(auth::nostr_login))
         .route("/auth/register", post(auth::register));
 
     // ── Farmers ──────────────────────────────────────────────────────────────
