@@ -408,6 +408,7 @@ export const ORDER_STATUS_LABELS: Record<string, string> = {
 
 export function sellerNextStatus(current: string): OrderStatus | null {
   const map: Record<string, OrderStatus> = {
+    pending_payment: 'paid',
     paid: 'processing',
     processing: 'in_transit',
     in_transit: 'delivered',

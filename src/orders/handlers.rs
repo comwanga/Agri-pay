@@ -152,6 +152,8 @@ fn can_transition(from: &str, to: &str, actor_is_seller: bool) -> bool {
         // Buyer confirms or disputes after seller marks delivered
         ("delivered", "confirmed") if !actor_is_seller => true,
         ("delivered", "disputed") if !actor_is_seller => true,
+        // Seller confirms payment received in their wallet (QR / external pay)
+        ("pending_payment", "paid") if actor_is_seller => true,
         // Buyer confirms in-person (skips Lightning + delivery steps)
         ("pending_payment", "confirmed") if !actor_is_seller => true,
         ("paid", "confirmed") if !actor_is_seller => true,

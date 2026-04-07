@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Package, Edit2, Trash2, ChevronDown, ChevronUp,
-  Truck, CheckCircle, Eye, EyeOff, AlertCircle,
+  Truck, CheckCircle, Eye, EyeOff, AlertCircle, Zap,
 } from 'lucide-react'
 import {
   listProducts, listOrders, updateProduct, deleteProduct,
@@ -167,8 +167,31 @@ function IncomingOrderCard({ order }: { order: Order }) {
             sellerDate={order.seller_delivery_date}
           />
 
-          {/* Seller can update delivery date and notes */}
-          {next && (
+          {/* Pending payment: prompt seller to confirm receipt in their wallet */}
+          {order.status === 'pending_payment' && (
+            <div className="space-y-3 bg-brand-500/5 border border-brand-500/20 rounded-xl p-4">
+              <div className="flex items-start gap-2">
+                <Zap className="w-4 h-4 text-brand-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold text-gray-100">Awaiting payment confirmation</p>
+                  <p className="text-xs text-gray-400 leading-relaxed">
+                    Check your Lightning wallet. If the buyer has already paid, confirm receipt here to start fulfilling the order.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => advance.mutate()}
+                disabled={advance.isPending}
+                className="btn-primary text-sm w-full justify-center"
+              >
+                <CheckCircle className="w-4 h-4" />
+                {advance.isPending ? 'Confirming…' : 'Payment received in my wallet'}
+              </button>
+            </div>
+          )}
+
+          {/* Active fulfillment steps */}
+          {next && order.status !== 'pending_payment' && (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
