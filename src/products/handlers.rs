@@ -106,7 +106,10 @@ pub struct ListProductsQuery {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async fn fetch_images(pool: &sqlx::PgPool, product_id: Uuid) -> Result<Vec<ProductImage>, sqlx::Error> {
+async fn fetch_images(
+    pool: &sqlx::PgPool,
+    product_id: Uuid,
+) -> Result<Vec<ProductImage>, sqlx::Error> {
     sqlx::query_as(
         "SELECT id, product_id, url, is_primary, sort_order, created_at
          FROM product_images WHERE product_id = $1 ORDER BY sort_order, created_at",
@@ -173,65 +176,73 @@ pub async fn list_products(
     let offset = (page - 1) * per_page;
 
     let rows: Vec<ProductRow> = match (q.category.as_deref(), q.seller_id) {
-        (Some(cat), Some(sid)) => sqlx::query_as(
-            "SELECT p.id, p.seller_id, f.name AS seller_name,
+        (Some(cat), Some(sid)) => {
+            sqlx::query_as(
+                "SELECT p.id, p.seller_id, f.name AS seller_name,
                     p.title, p.description, p.price_kes, p.unit,
                     p.quantity_avail, p.category, p.status,
                     p.location_name, p.created_at, p.updated_at
              FROM products p JOIN farmers f ON f.id = p.seller_id
              WHERE p.status = 'active' AND p.category = $1 AND p.seller_id = $2
              ORDER BY p.created_at DESC LIMIT $3 OFFSET $4",
-        )
-        .bind(cat)
-        .bind(sid)
-        .bind(per_page)
-        .bind(offset)
-        .fetch_all(&state.db)
-        .await?,
+            )
+            .bind(cat)
+            .bind(sid)
+            .bind(per_page)
+            .bind(offset)
+            .fetch_all(&state.db)
+            .await?
+        }
 
-        (Some(cat), None) => sqlx::query_as(
-            "SELECT p.id, p.seller_id, f.name AS seller_name,
+        (Some(cat), None) => {
+            sqlx::query_as(
+                "SELECT p.id, p.seller_id, f.name AS seller_name,
                     p.title, p.description, p.price_kes, p.unit,
                     p.quantity_avail, p.category, p.status,
                     p.location_name, p.created_at, p.updated_at
              FROM products p JOIN farmers f ON f.id = p.seller_id
              WHERE p.status = 'active' AND p.category = $1
              ORDER BY p.created_at DESC LIMIT $2 OFFSET $3",
-        )
-        .bind(cat)
-        .bind(per_page)
-        .bind(offset)
-        .fetch_all(&state.db)
-        .await?,
+            )
+            .bind(cat)
+            .bind(per_page)
+            .bind(offset)
+            .fetch_all(&state.db)
+            .await?
+        }
 
-        (None, Some(sid)) => sqlx::query_as(
-            "SELECT p.id, p.seller_id, f.name AS seller_name,
+        (None, Some(sid)) => {
+            sqlx::query_as(
+                "SELECT p.id, p.seller_id, f.name AS seller_name,
                     p.title, p.description, p.price_kes, p.unit,
                     p.quantity_avail, p.category, p.status,
                     p.location_name, p.created_at, p.updated_at
              FROM products p JOIN farmers f ON f.id = p.seller_id
              WHERE p.status != 'deleted' AND p.seller_id = $1
              ORDER BY p.created_at DESC LIMIT $2 OFFSET $3",
-        )
-        .bind(sid)
-        .bind(per_page)
-        .bind(offset)
-        .fetch_all(&state.db)
-        .await?,
+            )
+            .bind(sid)
+            .bind(per_page)
+            .bind(offset)
+            .fetch_all(&state.db)
+            .await?
+        }
 
-        (None, None) => sqlx::query_as(
-            "SELECT p.id, p.seller_id, f.name AS seller_name,
+        (None, None) => {
+            sqlx::query_as(
+                "SELECT p.id, p.seller_id, f.name AS seller_name,
                     p.title, p.description, p.price_kes, p.unit,
                     p.quantity_avail, p.category, p.status,
                     p.location_name, p.created_at, p.updated_at
              FROM products p JOIN farmers f ON f.id = p.seller_id
              WHERE p.status = 'active'
              ORDER BY p.created_at DESC LIMIT $1 OFFSET $2",
-        )
-        .bind(per_page)
-        .bind(offset)
-        .fetch_all(&state.db)
-        .await?,
+            )
+            .bind(per_page)
+            .bind(offset)
+            .fetch_all(&state.db)
+            .await?
+        }
     };
 
     let mut products = Vec::with_capacity(rows.len());
@@ -272,9 +283,9 @@ pub async fn create_product(
     claims: Claims,
     Json(body): Json<CreateProductRequest>,
 ) -> AppResult<(StatusCode, Json<Product>)> {
-    let seller_id = claims
-        .farmer_id
-        .ok_or_else(|| AppError::Forbidden("Must be a registered user to create listings".into()))?;
+    let seller_id = claims.farmer_id.ok_or_else(|| {
+        AppError::Forbidden("Must be a registered user to create listings".into())
+    })?;
 
     let title = body.title.trim().to_string();
     if title.is_empty() {
@@ -287,12 +298,7 @@ pub async fn create_product(
         )));
     }
 
-    let description = body
-        .description
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let description = body.description.as_deref().unwrap_or("").trim().to_string();
     if description.len() > MAX_DESC_LEN {
         return Err(AppError::BadRequest(format!(
             "description exceeds {} characters",
@@ -309,12 +315,7 @@ pub async fn create_product(
         ));
     }
 
-    let unit = body
-        .unit
-        .as_deref()
-        .unwrap_or("kg")
-        .trim()
-        .to_string();
+    let unit = body.unit.as_deref().unwrap_or("kg").trim().to_string();
     if unit.len() > MAX_UNIT_LEN {
         return Err(AppError::BadRequest(format!(
             "unit exceeds {} characters",
@@ -322,12 +323,7 @@ pub async fn create_product(
         )));
     }
 
-    let category = body
-        .category
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let category = body.category.as_deref().unwrap_or("").trim().to_string();
     if category.len() > MAX_CATEGORY_LEN {
         return Err(AppError::BadRequest(format!(
             "category exceeds {} characters",

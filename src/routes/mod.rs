@@ -43,10 +43,7 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
                 .put(product_handlers::update_product)
                 .delete(product_handlers::delete_product),
         )
-        .route(
-            "/products/:id/images",
-            post(product_handlers::upload_image),
-        )
+        .route("/products/:id/images", post(product_handlers::upload_image))
         .route(
             "/products/:id/images/:image_id",
             delete(product_handlers::delete_image),
@@ -59,7 +56,10 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
             get(order_handlers::list_orders).post(order_handlers::create_order),
         )
         .route("/orders/:id", get(order_handlers::get_order))
-        .route("/orders/:id/status", patch(order_handlers::update_order_status))
+        .route(
+            "/orders/:id/status",
+            patch(order_handlers::update_order_status),
+        )
         .route("/orders/:id", delete(order_handlers::cancel_order));
 
     // ── Payments (non-custodial) ──────────────────────────────────────────────

@@ -191,7 +191,9 @@ pub async fn update_farmer(
 ) -> AppResult<Json<Farmer>> {
     // Farmers can only update their own profile; admin can update anyone
     if claims.role == Role::Farmer && claims.farmer_id != Some(id) {
-        return Err(AppError::Forbidden("You can only update your own profile".into()));
+        return Err(AppError::Forbidden(
+            "You can only update your own profile".into(),
+        ));
     }
     if claims.role == Role::Operator {
         return Err(AppError::Forbidden("Admin or farmer required".into()));

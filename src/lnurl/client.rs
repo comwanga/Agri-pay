@@ -30,16 +30,12 @@ impl LnurlClient {
     /// Fetch LNURL-pay parameters from a Lightning Address (user@domain).
     async fn fetch_pay_params(&self, ln_address: &str) -> AppResult<LnurlPayParams> {
         let mut parts = ln_address.splitn(2, '@');
-        let user = parts
-            .next()
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| AppError::BadRequest("Invalid Lightning Address: missing user".into()))?;
-        let domain = parts
-            .next()
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                AppError::BadRequest("Invalid Lightning Address: missing domain".into())
-            })?;
+        let user = parts.next().filter(|s| !s.is_empty()).ok_or_else(|| {
+            AppError::BadRequest("Invalid Lightning Address: missing user".into())
+        })?;
+        let domain = parts.next().filter(|s| !s.is_empty()).ok_or_else(|| {
+            AppError::BadRequest("Invalid Lightning Address: missing domain".into())
+        })?;
 
         let url = format!("https://{}/.well-known/lnurlp/{}", domain, user);
 

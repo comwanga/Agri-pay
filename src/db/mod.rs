@@ -103,16 +103,14 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_create_product_persists(pool: PgPool) {
         let seller_id = insert_farmer(&pool, "Alice").await;
-        let product_id =
-            insert_product(&pool, seller_id, "Maize", dec!(500.00), dec!(100.0)).await;
+        let product_id = insert_product(&pool, seller_id, "Maize", dec!(500.00), dec!(100.0)).await;
 
-        let row: (String, Decimal, Decimal) = sqlx::query_as(
-            "SELECT title, price_kes, quantity_avail FROM products WHERE id = $1",
-        )
-        .bind(product_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let row: (String, Decimal, Decimal) =
+            sqlx::query_as("SELECT title, price_kes, quantity_avail FROM products WHERE id = $1")
+                .bind(product_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
 
         assert_eq!(row.0, "Maize");
         assert_eq!(row.1, dec!(500.00));
@@ -129,7 +127,10 @@ mod tests {
         .bind(seller_id)
         .execute(&pool)
         .await;
-        assert!(err.is_err(), "price_kes = 0 should violate CHECK constraint");
+        assert!(
+            err.is_err(),
+            "price_kes = 0 should violate CHECK constraint"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -142,7 +143,10 @@ mod tests {
         .bind(seller_id)
         .execute(&pool)
         .await;
-        assert!(err.is_err(), "negative price should violate CHECK constraint");
+        assert!(
+            err.is_err(),
+            "negative price should violate CHECK constraint"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -155,7 +159,10 @@ mod tests {
         .bind(seller_id)
         .execute(&pool)
         .await;
-        assert!(err.is_err(), "negative quantity should violate CHECK constraint");
+        assert!(
+            err.is_err(),
+            "negative quantity should violate CHECK constraint"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -168,14 +175,16 @@ mod tests {
         .bind(seller_id)
         .execute(&pool)
         .await;
-        assert!(err.is_err(), "'available' is not in the status CHECK constraint");
+        assert!(
+            err.is_err(),
+            "'available' is not in the status CHECK constraint"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_soft_delete_hides_product(pool: PgPool) {
         let seller_id = insert_farmer(&pool, "Alice").await;
-        let product_id =
-            insert_product(&pool, seller_id, "Beans", dec!(200.00), dec!(50.0)).await;
+        let product_id = insert_product(&pool, seller_id, "Beans", dec!(200.00), dec!(50.0)).await;
 
         sqlx::query("UPDATE products SET status = 'deleted' WHERE id = $1")
             .bind(product_id)
@@ -189,7 +198,10 @@ mod tests {
                 .await
                 .unwrap();
 
-        assert_eq!(count, 0, "deleted product must not appear in active listings");
+        assert_eq!(
+            count, 0,
+            "deleted product must not appear in active listings"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -240,8 +252,7 @@ mod tests {
     async fn test_create_order_decrements_quantity(pool: PgPool) {
         let seller = insert_farmer(&pool, "Alice").await;
         let buyer = insert_farmer(&pool, "Bob").await;
-        let product_id =
-            insert_product(&pool, seller, "Maize", dec!(500.00), dec!(100.0)).await;
+        let product_id = insert_product(&pool, seller, "Maize", dec!(500.00), dec!(100.0)).await;
 
         let rows = sqlx::query(
             "UPDATE products SET quantity_avail = quantity_avail - $2
@@ -270,8 +281,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_create_order_oversell_guard(pool: PgPool) {
         let seller = insert_farmer(&pool, "Alice").await;
-        let product_id =
-            insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
+        let product_id = insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
 
         let rows = sqlx::query(
             "UPDATE products SET quantity_avail = quantity_avail - $2
@@ -286,12 +296,11 @@ mod tests {
 
         assert_eq!(rows, 0, "over-sell guard must block the update");
 
-        let qty: Decimal =
-            sqlx::query_scalar("SELECT quantity_avail FROM products WHERE id = $1")
-                .bind(product_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let qty: Decimal = sqlx::query_scalar("SELECT quantity_avail FROM products WHERE id = $1")
+            .bind(product_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
 
         assert_eq!(qty, dec!(10.0), "quantity must be unchanged");
     }
@@ -300,8 +309,7 @@ mod tests {
     async fn test_cancel_order_restores_quantity(pool: PgPool) {
         let seller = insert_farmer(&pool, "Alice").await;
         let buyer = insert_farmer(&pool, "Bob").await;
-        let product_id =
-            insert_product(&pool, seller, "Beans", dec!(200.00), dec!(50.0)).await;
+        let product_id = insert_product(&pool, seller, "Beans", dec!(200.00), dec!(50.0)).await;
 
         // Simulate the stock decrement from create_order
         sqlx::query(
@@ -324,30 +332,26 @@ mod tests {
             .execute(&mut *tx)
             .await
             .unwrap();
-        sqlx::query(
-            "UPDATE products SET quantity_avail = quantity_avail + $2 WHERE id = $1",
-        )
-        .bind(product_id)
-        .bind(dec!(20.0))
-        .execute(&mut *tx)
-        .await
-        .unwrap();
+        sqlx::query("UPDATE products SET quantity_avail = quantity_avail + $2 WHERE id = $1")
+            .bind(product_id)
+            .bind(dec!(20.0))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
         tx.commit().await.unwrap();
 
-        let qty: Decimal =
-            sqlx::query_scalar("SELECT quantity_avail FROM products WHERE id = $1")
-                .bind(product_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let qty: Decimal = sqlx::query_scalar("SELECT quantity_avail FROM products WHERE id = $1")
+            .bind(product_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(qty, dec!(50.0), "quantity must be fully restored");
 
-        let status: String =
-            sqlx::query_scalar("SELECT status FROM orders WHERE id = $1")
-                .bind(order_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let status: String = sqlx::query_scalar("SELECT status FROM orders WHERE id = $1")
+            .bind(order_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(status, "cancelled");
     }
 
@@ -355,8 +359,7 @@ mod tests {
     async fn test_order_invalid_status_rejected(pool: PgPool) {
         let seller = insert_farmer(&pool, "Alice").await;
         let buyer = insert_farmer(&pool, "Bob").await;
-        let product_id =
-            insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
+        let product_id = insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
         let order_id =
             insert_order(&pool, product_id, seller, buyer, dec!(5.0), dec!(500.00)).await;
 
@@ -372,8 +375,7 @@ mod tests {
     async fn test_order_full_delivery_status_chain(pool: PgPool) {
         let seller = insert_farmer(&pool, "Alice").await;
         let buyer = insert_farmer(&pool, "Bob").await;
-        let product_id =
-            insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
+        let product_id = insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
         let order_id =
             insert_order(&pool, product_id, seller, buyer, dec!(5.0), dec!(500.00)).await;
 
@@ -385,12 +387,11 @@ mod tests {
                 .await
                 .unwrap();
 
-            let current: String =
-                sqlx::query_scalar("SELECT status FROM orders WHERE id = $1")
-                    .bind(order_id)
-                    .fetch_one(&pool)
-                    .await
-                    .unwrap();
+            let current: String = sqlx::query_scalar("SELECT status FROM orders WHERE id = $1")
+                .bind(order_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
 
             assert_eq!(current, status, "failed at step '{}'", status);
         }
@@ -402,8 +403,7 @@ mod tests {
     async fn test_confirm_payment_settles_order(pool: PgPool) {
         let seller = insert_farmer(&pool, "Alice").await;
         let buyer = insert_farmer(&pool, "Bob").await;
-        let product_id =
-            insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
+        let product_id = insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
         let order_id =
             insert_order(&pool, product_id, seller, buyer, dec!(1.0), dec!(500.00)).await;
         let payment_id = insert_payment(&pool, order_id, 3333).await;
@@ -432,20 +432,18 @@ mod tests {
         .await
         .unwrap();
 
-        let pay_status: String =
-            sqlx::query_scalar("SELECT status FROM payments WHERE id = $1")
-                .bind(payment_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let pay_status: String = sqlx::query_scalar("SELECT status FROM payments WHERE id = $1")
+            .bind(payment_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(pay_status, "settled");
 
-        let order_status: String =
-            sqlx::query_scalar("SELECT status FROM orders WHERE id = $1")
-                .bind(order_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let order_status: String = sqlx::query_scalar("SELECT status FROM orders WHERE id = $1")
+            .bind(order_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(order_status, "paid");
     }
 
@@ -453,8 +451,7 @@ mod tests {
     async fn test_payment_hash_uniqueness_enforced(pool: PgPool) {
         let seller = insert_farmer(&pool, "Alice").await;
         let buyer = insert_farmer(&pool, "Bob").await;
-        let product_id =
-            insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
+        let product_id = insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
         let order_id =
             insert_order(&pool, product_id, seller, buyer, dec!(2.0), dec!(500.00)).await;
 
@@ -476,15 +473,17 @@ mod tests {
             .execute(&pool)
             .await;
 
-        assert!(err.is_err(), "duplicate payment_hash must violate UNIQUE constraint");
+        assert!(
+            err.is_err(),
+            "duplicate payment_hash must violate UNIQUE constraint"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_payment_invalid_status_rejected(pool: PgPool) {
         let seller = insert_farmer(&pool, "Alice").await;
         let buyer = insert_farmer(&pool, "Bob").await;
-        let product_id =
-            insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
+        let product_id = insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
         let order_id =
             insert_order(&pool, product_id, seller, buyer, dec!(1.0), dec!(500.00)).await;
         let payment_id = insert_payment(&pool, order_id, 1000).await;
@@ -501,8 +500,7 @@ mod tests {
     async fn test_order_event_log_records_transition(pool: PgPool) {
         let seller = insert_farmer(&pool, "Alice").await;
         let buyer = insert_farmer(&pool, "Bob").await;
-        let product_id =
-            insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
+        let product_id = insert_product(&pool, seller, "Maize", dec!(500.00), dec!(10.0)).await;
         let order_id =
             insert_order(&pool, product_id, seller, buyer, dec!(1.0), dec!(500.00)).await;
 

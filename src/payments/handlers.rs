@@ -67,9 +67,7 @@ async fn get_or_fetch_rate(state: &SharedState) -> AppResult<Decimal> {
     .await?;
 
     if let Some(r) = row {
-        let age = Utc::now()
-            .signed_duration_since(r.fetched_at)
-            .num_seconds() as u64;
+        let age = Utc::now().signed_duration_since(r.fetched_at).num_seconds() as u64;
         if age <= state.config.max_rate_stale_secs {
             return Ok(r.btc_kes);
         }
@@ -225,7 +223,10 @@ pub async fn create_invoice(
     let amount_msats = amount_sats * 1000;
 
     // Request invoice from seller's wallet via LNURL-pay
-    let bolt11 = state.lnurl.request_invoice(&ln_address, amount_msats).await?;
+    let bolt11 = state
+        .lnurl
+        .request_invoice(&ln_address, amount_msats)
+        .await?;
 
     // Store payment record
     let payment_id: Uuid = sqlx::query_scalar(
@@ -272,8 +273,8 @@ pub async fn confirm_payment(
         .ok_or_else(|| AppError::Forbidden("Must be a registered user".into()))?;
 
     // Validate preimage: must be 64 hex chars (32 bytes)
-    let preimage_bytes =
-        hex::decode(&body.preimage).map_err(|_| AppError::BadRequest("preimage must be hex-encoded".into()))?;
+    let preimage_bytes = hex::decode(&body.preimage)
+        .map_err(|_| AppError::BadRequest("preimage must be hex-encoded".into()))?;
     if preimage_bytes.len() != 32 {
         return Err(AppError::BadRequest(
             "preimage must be exactly 32 bytes (64 hex characters)".into(),
@@ -295,9 +296,8 @@ pub async fn confirm_payment(
             .fetch_optional(&state.db)
             .await?;
 
-    let payment = payment.ok_or_else(|| {
-        AppError::NotFound(format!("Payment {} not found", body.payment_id))
-    })?;
+    let payment = payment
+        .ok_or_else(|| AppError::NotFound(format!("Payment {} not found", body.payment_id)))?;
 
     if payment.status != "pending" {
         return Err(AppError::BadRequest(format!(
@@ -307,11 +307,10 @@ pub async fn confirm_payment(
     }
 
     // Verify the buyer owns this order
-    let order_buyer: Option<Uuid> =
-        sqlx::query_scalar("SELECT buyer_id FROM orders WHERE id = $1")
-            .bind(payment.order_id)
-            .fetch_optional(&state.db)
-            .await?;
+    let order_buyer: Option<Uuid> = sqlx::query_scalar("SELECT buyer_id FROM orders WHERE id = $1")
+        .bind(payment.order_id)
+        .fetch_optional(&state.db)
+        .await?;
 
     if order_buyer != Some(buyer_id) {
         return Err(AppError::Forbidden("Access denied".into()));
@@ -400,9 +399,8 @@ pub async fn get_payment_for_order(
     .fetch_optional(&state.db)
     .await?;
 
-    let row = row.ok_or_else(|| {
-        AppError::NotFound(format!("No payment found for order {}", order_id))
-    })?;
+    let row =
+        row.ok_or_else(|| AppError::NotFound(format!("No payment found for order {}", order_id)))?;
 
     Ok(Json(PaymentRecord {
         id: row.id,

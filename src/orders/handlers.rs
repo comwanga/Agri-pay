@@ -341,29 +341,35 @@ pub async fn list_orders(
         .ok_or_else(|| AppError::Forbidden("Must be a registered user".into()))?;
 
     let rows: Vec<OrderRow> = match q.role.as_deref() {
-        Some("seller") => sqlx::query_as(&format!(
-            "{} WHERE o.seller_id = $1 ORDER BY o.created_at DESC LIMIT 200",
-            ORDER_SELECT
-        ))
-        .bind(user_id)
-        .fetch_all(&state.db)
-        .await?,
+        Some("seller") => {
+            sqlx::query_as(&format!(
+                "{} WHERE o.seller_id = $1 ORDER BY o.created_at DESC LIMIT 200",
+                ORDER_SELECT
+            ))
+            .bind(user_id)
+            .fetch_all(&state.db)
+            .await?
+        }
 
-        Some("buyer") => sqlx::query_as(&format!(
-            "{} WHERE o.buyer_id = $1 ORDER BY o.created_at DESC LIMIT 200",
-            ORDER_SELECT
-        ))
-        .bind(user_id)
-        .fetch_all(&state.db)
-        .await?,
+        Some("buyer") => {
+            sqlx::query_as(&format!(
+                "{} WHERE o.buyer_id = $1 ORDER BY o.created_at DESC LIMIT 200",
+                ORDER_SELECT
+            ))
+            .bind(user_id)
+            .fetch_all(&state.db)
+            .await?
+        }
 
-        _ => sqlx::query_as(&format!(
-            "{} WHERE o.seller_id = $1 OR o.buyer_id = $1 ORDER BY o.created_at DESC LIMIT 200",
-            ORDER_SELECT
-        ))
-        .bind(user_id)
-        .fetch_all(&state.db)
-        .await?,
+        _ => {
+            sqlx::query_as(&format!(
+                "{} WHERE o.seller_id = $1 OR o.buyer_id = $1 ORDER BY o.created_at DESC LIMIT 200",
+                ORDER_SELECT
+            ))
+            .bind(user_id)
+            .fetch_all(&state.db)
+            .await?
+        }
     };
 
     Ok(Json(rows.into_iter().map(Into::into).collect()))
@@ -379,11 +385,10 @@ pub async fn get_order(
         .farmer_id
         .ok_or_else(|| AppError::Forbidden("Must be a registered user".into()))?;
 
-    let order: Option<OrderRow> =
-        sqlx::query_as(&format!("{} WHERE o.id = $1", ORDER_SELECT))
-            .bind(id)
-            .fetch_optional(&state.db)
-            .await?;
+    let order: Option<OrderRow> = sqlx::query_as(&format!("{} WHERE o.id = $1", ORDER_SELECT))
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?;
 
     let order = order.ok_or_else(|| AppError::NotFound(format!("Order {} not found", id)))?;
 
@@ -573,11 +578,12 @@ pub async fn cancel_order(
         quantity: Decimal,
         status: String,
     }
-    let meta: Option<OrderMeta> =
-        sqlx::query_as("SELECT product_id, seller_id, buyer_id, quantity, status FROM orders WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&state.db)
-            .await?;
+    let meta: Option<OrderMeta> = sqlx::query_as(
+        "SELECT product_id, seller_id, buyer_id, quantity, status FROM orders WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await?;
 
     let meta = meta.ok_or_else(|| AppError::NotFound(format!("Order {} not found", id)))?;
 
@@ -600,13 +606,11 @@ pub async fn cancel_order(
         .execute(&mut *tx)
         .await?;
 
-    sqlx::query(
-        "UPDATE products SET quantity_avail = quantity_avail + $2 WHERE id = $1",
-    )
-    .bind(meta.product_id)
-    .bind(meta.quantity)
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query("UPDATE products SET quantity_avail = quantity_avail + $2 WHERE id = $1")
+        .bind(meta.product_id)
+        .bind(meta.quantity)
+        .execute(&mut *tx)
+        .await?;
 
     tx.commit().await?;
 
