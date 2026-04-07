@@ -31,23 +31,13 @@ services:
       DATABASE_URL: postgresql://agripay:agripay_dev@postgres:5432/agri_pay
       RUST_LOG: agri_pay=info,tower_http=info
       LOG_FORMAT: json
-      BTCPAY_URL: ${BTCPAY_URL:-http://localhost}
-      BTCPAY_API_KEY: ${BTCPAY_API_KEY:-placeholder}
-      BTCPAY_STORE_ID: ${BTCPAY_STORE_ID:-placeholder}
-      BTCPAY_WEBHOOK_SECRET: ${BTCPAY_WEBHOOK_SECRET:-dev-btcpay-secret}
       JWT_SECRET: ${JWT_SECRET:-change-this-in-production-min-32-chars}
       JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-24}
-      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
-      MPESA_ENV: ${MPESA_ENV:-sandbox}
-      MPESA_CONSUMER_KEY: ${MPESA_CONSUMER_KEY:-placeholder}
-      MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET:-placeholder}
-      MPESA_SHORTCODE: ${MPESA_SHORTCODE:-600998}
-      MPESA_INITIATOR_NAME: ${MPESA_INITIATOR_NAME:-testapi}
-      MPESA_INITIATOR_PASSWORD: ${MPESA_INITIATOR_PASSWORD:-Safaricom999!*!}
-      BASE_URL: ${BASE_URL:-http://localhost:3001}
-      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-webhook-secret}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3001}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
       RATE_CACHE_SECONDS: ${RATE_CACHE_SECONDS:-60}
+      UPLOAD_DIR: ${UPLOAD_DIR:-./uploads}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]

@@ -18,6 +18,21 @@ jobs:
     name: Backend (Rust)
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agripay_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -47,7 +62,7 @@ jobs:
       - name: Run tests
         run: cargo test --all-features -- --nocapture
         env:
-          MPESA_ENV: sandbox
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/agripay_test
 
       - name: Build release binary
         run: cargo build --release --locked
@@ -103,10 +118,5 @@ jobs:
       - name: Validate docker-compose.yml
         run: docker compose config --quiet
         env:
-          MPESA_CONSUMER_KEY: placeholder
-          MPESA_CONSUMER_SECRET: placeholder
-          MPESA_INITIATOR_PASSWORD: placeholder
-          MPESA_CERT_PATH: /dev/null
-          API_KEY: placeholder
-          WEBHOOK_SECRET: placeholder
-          BASE_URL: http://localhost:3001
+          JWT_SECRET: change-this-in-production-min-32-chars
+          PUBLIC_BASE_URL: http://localhost:3001
