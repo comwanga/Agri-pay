@@ -1,4 +1,4 @@
-import { finalizeEvent, getPublicKey as nostrGetPublicKey } from 'nostr-tools/pure'
+import { finalizeEvent, getPublicKey as nostrGetPublicKey, verifyEvent } from 'nostr-tools/pure'
 import type {
   CreateInvoiceResponse,
   CreateOrderPayload,
@@ -112,8 +112,11 @@ export async function nostrLoginWithKey(secretKey: Uint8Array): Promise<LoginRes
     content: '',
   }, secretKey)
 
-  // Verify the key produced a valid pubkey (throws if sk is bad)
-  nostrGetPublicKey(secretKey)
+  // Self-verify: catch signing bugs before hitting the network
+  nostrGetPublicKey(secretKey) // throws if sk is invalid
+  if (!verifyEvent(event)) {
+    throw new Error('Event signature self-verification failed — key may be corrupt')
+  }
 
   const res = await fetch(`${BASE}/auth/nostr`, {
     method: 'POST',

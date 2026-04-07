@@ -184,8 +184,7 @@ pub async fn pubkey_login(
 }
 
 fn verify_schnorr(pubkey_hex: &str, event_id_hex: &str, sig_hex: &str) -> AppResult<()> {
-    use k256::schnorr::{Signature, VerifyingKey};
-    use signature::Verifier;
+    use secp256k1::{schnorr::Signature, Message, XOnlyPublicKey, SECP256K1};
 
     let pubkey_bytes =
         hex::decode(pubkey_hex).map_err(|_| AppError::BadRequest("Invalid pubkey hex".into()))?;
@@ -194,12 +193,18 @@ fn verify_schnorr(pubkey_hex: &str, event_id_hex: &str, sig_hex: &str) -> AppRes
     let sig_bytes =
         hex::decode(sig_hex).map_err(|_| AppError::BadRequest("Invalid signature hex".into()))?;
 
-    let vk = VerifyingKey::from_bytes(&pubkey_bytes)
+    let pubkey = XOnlyPublicKey::from_slice(&pubkey_bytes)
         .map_err(|_| AppError::Unauthorized("Invalid Nostr public key".into()))?;
-    let sig = Signature::try_from(sig_bytes.as_slice())
+
+    let sig = Signature::from_slice(&sig_bytes)
         .map_err(|_| AppError::Unauthorized("Invalid signature format".into()))?;
 
-    vk.verify(&event_id_bytes, &sig)
+    // event_id is SHA-256(canonical event JSON) — exactly 32 bytes
+    let msg = Message::from_digest_slice(&event_id_bytes)
+        .map_err(|_| AppError::Unauthorized("Invalid event id length".into()))?;
+
+    SECP256K1
+        .verify_schnorr(&sig, &msg, &pubkey)
         .map_err(|_| AppError::Unauthorized("Invalid Nostr signature".into()))?;
 
     Ok(())
