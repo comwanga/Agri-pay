@@ -15,15 +15,16 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   if (authed) return <>{children}</>
 
   return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <div className="text-center max-w-xs">
+    <div className="flex items-center justify-center min-h-[60vh] px-6">
+      <div className="text-center w-full max-w-xs">
         <div className="w-14 h-14 rounded-2xl bg-gray-800 border border-gray-700 flex items-center justify-center mx-auto mb-5">
           <LogIn className="w-7 h-7 text-gray-400" />
         </div>
         <p className="text-gray-100 font-semibold mb-1">Connect to continue</p>
         <p className="text-sm text-gray-500 mb-5 leading-relaxed">
           This feature requires a Nostr identity.
-          Open AgriPay inside <strong className="text-gray-300">Fedi</strong> for instant access.
+          Open AgriPay inside <strong className="text-gray-300">Fedi</strong> for instant access,
+          or paste your public key below.
         </p>
         <button
           onClick={connect}

@@ -65,15 +65,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await nostrLogin()
       await onSuccess()
-    } catch (e: unknown) {
+    } catch {
+      // Any failure — broken extension, no signer, network error — opens the
+      // modal so the user can paste their npub or generate a new identity.
       setConnecting(false)
-      const msg = e instanceof Error ? e.message : 'Connection failed'
-      // NO_SIGNER means no extension and no stored key — show the modal
-      if (msg === 'NO_SIGNER') {
-        setShowModal(true)
-      } else {
-        setError(msg)
-      }
+      setShowModal(true)
     }
   }, [onSuccess])
 
