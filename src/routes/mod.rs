@@ -1,14 +1,12 @@
 use crate::auth;
-use crate::btcpay::webhook as btcpay_webhook;
 use crate::farmers::handlers as farmer_handlers;
-use crate::mpesa::webhook as mpesa_webhook;
 use crate::oracle::handlers as oracle_handlers;
 use crate::orders::handlers as order_handlers;
 use crate::payments::handlers as payment_handlers;
+use crate::products::handlers as product_handlers;
 use crate::state::SharedState;
-use crate::wallet::handlers as wallet_handlers;
 use axum::{
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use tower::limit::ConcurrencyLimitLayer;
@@ -20,7 +18,7 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
         .route("/auth/nostr", post(auth::nostr_login))
         .route("/auth/register", post(auth::register));
 
-    // ── Farmers ──────────────────────────────────────────────────────────────
+    // ── Farmers (users/profiles) ──────────────────────────────────────────────
     let farmer_routes = Router::new()
         .route(
             "/farmers",
@@ -33,20 +31,25 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
                 .delete(farmer_handlers::delete_farmer),
         );
 
-    // ── Payments ─────────────────────────────────────────────────────────────
-    let payment_routes = Router::new()
+    // ── Products ──────────────────────────────────────────────────────────────
+    let product_routes = Router::new()
         .route(
-            "/payments",
-            get(payment_handlers::list_payments).post(payment_handlers::create_payment),
+            "/products",
+            get(product_handlers::list_products).post(product_handlers::create_product),
         )
-        .route("/payments/:id", get(payment_handlers::get_payment));
-
-    // ── Wallet ────────────────────────────────────────────────────────────────
-    let wallet_routes = Router::new()
-        .route("/wallet/balance", get(wallet_handlers::get_balance))
         .route(
-            "/wallet/withdraw",
-            post(wallet_handlers::request_withdrawal),
+            "/products/:id",
+            get(product_handlers::get_product)
+                .put(product_handlers::update_product)
+                .delete(product_handlers::delete_product),
+        )
+        .route(
+            "/products/:id/images",
+            post(product_handlers::upload_image),
+        )
+        .route(
+            "/products/:id/images/:image_id",
+            delete(product_handlers::delete_image),
         );
 
     // ── Orders ────────────────────────────────────────────────────────────────
@@ -55,26 +58,21 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
             "/orders",
             get(order_handlers::list_orders).post(order_handlers::create_order),
         )
-        .route("/orders/:id/fill", put(order_handlers::fill_order))
+        .route("/orders/:id", get(order_handlers::get_order))
+        .route("/orders/:id/status", patch(order_handlers::update_order_status))
         .route("/orders/:id", delete(order_handlers::cancel_order));
+
+    // ── Payments (non-custodial) ──────────────────────────────────────────────
+    let payment_routes = Router::new()
+        .route("/payments/invoice", post(payment_handlers::create_invoice))
+        .route("/payments/confirm", post(payment_handlers::confirm_payment))
+        .route(
+            "/payments/order/:order_id",
+            get(payment_handlers::get_payment_for_order),
+        );
 
     // ── Oracle ────────────────────────────────────────────────────────────────
     let oracle_routes = Router::new().route("/oracle/rate", get(oracle_handlers::get_rate));
-
-    // ── Webhooks (no JWT — their own auth mechanisms) ────────────────────────
-    let webhook_routes = Router::new()
-        .route(
-            "/webhooks/btcpay",
-            post(btcpay_webhook::handle_btcpay_webhook),
-        )
-        .route(
-            "/webhooks/mpesa/:secret/result",
-            post(mpesa_webhook::mpesa_result),
-        )
-        .route(
-            "/webhooks/mpesa/:secret/timeout",
-            post(mpesa_webhook::mpesa_timeout),
-        );
 
     // ── Health ────────────────────────────────────────────────────────────────
     let health_route = Router::new().route("/health", get(health));
@@ -82,11 +80,10 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
     Router::new()
         .merge(auth_routes)
         .merge(farmer_routes)
-        .merge(payment_routes)
-        .merge(wallet_routes)
+        .merge(product_routes)
         .merge(order_routes)
+        .merge(payment_routes)
         .merge(oracle_routes)
-        .merge(webhook_routes)
         .merge(health_route)
         .layer(ConcurrencyLimitLayer::new(200))
 }

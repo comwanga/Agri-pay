@@ -1,34 +1,33 @@
 mod auth;
-mod btcpay;
 mod config;
 mod db;
 mod error;
 mod events;
 mod farmers;
-mod mpesa;
+mod lnurl;
 mod oracle;
 mod orders;
 mod payments;
-mod reconciliation;
+mod products;
 mod routes;
 mod state;
-mod wallet;
 
 use anyhow::Result;
 use axum::{
     http::{HeaderValue, Method},
     Router,
 };
-use reqwest::Client;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::Config;
-use crate::mpesa::MpesaClient;
+use crate::lnurl::LnurlClient;
 use crate::oracle::RateOracle;
 use crate::state::AppState;
+use reqwest::Client;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -54,6 +53,10 @@ async fn main() -> Result<()> {
 
     tracing::info!("Starting agri-pay v{}", env!("CARGO_PKG_VERSION"));
 
+    // ── Ensure upload directory exists ────────────────────────────────────────
+    tokio::fs::create_dir_all(&config.upload_dir).await?;
+    tracing::info!("Upload directory: {}", config.upload_dir);
+
     // ── Shared HTTP client ────────────────────────────────────────────────────
     let http = Client::builder()
         .use_rustls_tls()
@@ -66,20 +69,15 @@ async fn main() -> Result<()> {
     tracing::info!("Database connected and migrations applied");
 
     // ── Build shared state ────────────────────────────────────────────────────
-    let mpesa = MpesaClient::new(&config, http.clone());
     let oracle = RateOracle::new(&config, http.clone());
+    let lnurl = LnurlClient::new(http.clone());
 
     let state = Arc::new(AppState {
         db: pool,
         config: config.clone(),
-        http,
-        mpesa,
         oracle,
+        lnurl,
     });
-
-    // ── Background workers ────────────────────────────────────────────────────
-    reconciliation::worker::spawn_workers(state.clone());
-    tracing::info!("Background workers started");
 
     // ── CORS ──────────────────────────────────────────────────────────────────
     let cors = build_cors(&config);
@@ -87,6 +85,7 @@ async fn main() -> Result<()> {
     // ── Router ────────────────────────────────────────────────────────────────
     let app = Router::new()
         .nest("/api", routes::router(state.clone()))
+        .nest_service("/uploads", ServeDir::new(&config.upload_dir))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);

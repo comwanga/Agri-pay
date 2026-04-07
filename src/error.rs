@@ -30,11 +30,8 @@ pub enum AppError {
     #[error("JWT error: {0}")]
     Jwt(#[from] jsonwebtoken::errors::Error),
 
-    #[error("BTCPay error: {0}")]
-    BtcPay(String),
-
-    #[error("M-Pesa error: {0}")]
-    Mpesa(String),
+    #[error("LNURL error: {0}")]
+    Lnurl(String),
 
     #[error("Oracle error: {0}")]
     Oracle(String),
@@ -52,7 +49,6 @@ impl IntoResponse for AppError {
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             AppError::Database(e) => {
-                // Detect unique violations and surface them as 409
                 let msg = e.to_string();
                 if msg.contains("unique") || msg.contains("duplicate") {
                     tracing::warn!("Unique constraint violation: {}", e);
@@ -69,12 +65,8 @@ impl IntoResponse for AppError {
                 tracing::warn!("JWT validation error: {}", e);
                 (StatusCode::UNAUTHORIZED, "Invalid or expired token".into())
             }
-            AppError::BtcPay(msg) => {
-                tracing::error!("BTCPay error: {}", msg);
-                (StatusCode::BAD_GATEWAY, msg.clone())
-            }
-            AppError::Mpesa(msg) => {
-                tracing::error!("M-Pesa error: {}", msg);
+            AppError::Lnurl(msg) => {
+                tracing::error!("LNURL error: {}", msg);
                 (StatusCode::BAD_GATEWAY, msg.clone())
             }
             AppError::Oracle(msg) => {

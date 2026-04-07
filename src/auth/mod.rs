@@ -101,7 +101,7 @@ pub async fn login(
         }));
     }
 
-    // 3. Farmer phone + PIN login
+    // 3. Farmer phone + PIN login (phone may be NULL for Nostr-only accounts)
     let farmer: Option<FarmerAuthRow> =
         sqlx::query_as("SELECT id, pin_hash FROM farmers WHERE phone = $1")
             .bind(&body.username)

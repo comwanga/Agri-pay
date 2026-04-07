@@ -1,23 +1,24 @@
 import type {
-  Balance,
-  CreateFarmerPayload,
+  CreateInvoiceResponse,
   CreateOrderPayload,
-  CreatePaymentPayload,
-  CreatePaymentResponse,
+  CreateProductPayload,
   ExchangeRate,
   Farmer,
   LoginRequest,
   LoginResponse,
   Order,
-  PaymentWithFarmer,
+  OrderStatus,
+  PaymentRecord,
+  Product,
+  ProductImage,
   UpdateFarmerPayload,
-  Withdrawal,
-  WithdrawRequest,
+  UpdateOrderStatusPayload,
+  UpdateProductPayload,
 } from '../types'
 
 const BASE = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '')
 
-// ─── Nostr / Fedi types (NIP-07 window.nostr injection) ──────────────────────
+// ─── Nostr / WebLN window extensions ─────────────────────────────────────────
 
 interface NostrEvent {
   id: string
@@ -34,6 +35,10 @@ declare global {
     nostr?: {
       getPublicKey(): Promise<string>
       signEvent(event: Omit<NostrEvent, 'id' | 'pubkey' | 'sig'>): Promise<NostrEvent>
+    }
+    webln?: {
+      enable(): Promise<void>
+      sendPayment(paymentRequest: string): Promise<{ preimage: string }>
     }
   }
 }
@@ -57,26 +62,25 @@ export function clearToken(): void {
 // ─── Core request helper ─────────────────────────────────────────────────────
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = `${BASE}${path}`
   const token = getToken()
-
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options?.headers as Record<string, string>),
+  }
+
+  // Don't set Content-Type for FormData (browser sets it with boundary)
+  if (!(options?.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json'
   }
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  const res = await fetch(url, {
-    ...options,
-    headers,
-  })
+  const res = await fetch(`${BASE}${path}`, { ...options, headers })
 
   if (res.status === 401) {
     clearToken()
-    window.location.reload()  // re-triggers Nostr auto-auth in Fedi
+    window.location.reload()
     throw new Error('Session expired')
   }
 
@@ -86,9 +90,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       const body = await res.json()
       if (body?.error) message = body.error
       else if (body?.message) message = body.message
-    } catch {
-      // ignore parse error, use default message
-    }
+    } catch { /* ignore */ }
     throw new Error(message)
   }
 
@@ -111,18 +113,13 @@ export function logout(): void {
 }
 
 export async function nostrLogin(): Promise<LoginResponse> {
-  if (!window.nostr) {
-    throw new Error('No Nostr signer available')
-  }
+  if (!window.nostr) throw new Error('No Nostr signer available')
 
   const url = `${window.location.origin}/api/auth/nostr`
   const unsignedEvent = {
     kind: 27235,
     created_at: Math.floor(Date.now() / 1000),
-    tags: [
-      ['u', url],
-      ['method', 'POST'],
-    ],
+    tags: [['u', url], ['method', 'POST']],
     content: '',
   }
 
@@ -148,80 +145,85 @@ export async function nostrLogin(): Promise<LoginResponse> {
   return resp
 }
 
-// ─── Farmers ─────────────────────────────────────────────────────────────────
+// ─── Profile ─────────────────────────────────────────────────────────────────
 
-export async function getFarmers(): Promise<Farmer[]> {
-  return request<Farmer[]>('/farmers')
-}
-
-export async function createFarmer(payload: CreateFarmerPayload): Promise<Farmer> {
-  return request<Farmer>('/farmers', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
-export async function getFarmer(id: string): Promise<Farmer> {
+export async function getProfile(id: string): Promise<Farmer> {
   return request<Farmer>(`/farmers/${id}`)
 }
 
-export async function updateFarmer(id: string, payload: UpdateFarmerPayload): Promise<Farmer> {
+export async function updateProfile(id: string, payload: UpdateFarmerPayload): Promise<Farmer> {
   return request<Farmer>(`/farmers/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
   })
 }
 
-export async function deleteFarmer(id: string): Promise<{ deleted: boolean }> {
-  return request<{ deleted: boolean }>(`/farmers/${id}`, {
+// ─── Products ────────────────────────────────────────────────────────────────
+
+export async function listProducts(params?: {
+  category?: string
+  seller_id?: string
+  page?: number
+  per_page?: number
+}): Promise<Product[]> {
+  const q = new URLSearchParams()
+  if (params?.category) q.set('category', params.category)
+  if (params?.seller_id) q.set('seller_id', params.seller_id)
+  if (params?.page) q.set('page', String(params.page))
+  if (params?.per_page) q.set('per_page', String(params.per_page))
+  const qs = q.toString()
+  return request<Product[]>(`/products${qs ? `?${qs}` : ''}`)
+}
+
+export async function getProduct(id: string): Promise<Product> {
+  return request<Product>(`/products/${id}`)
+}
+
+export async function createProduct(payload: CreateProductPayload): Promise<Product> {
+  return request<Product>('/products', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateProduct(id: string, payload: UpdateProductPayload): Promise<Product> {
+  return request<Product>(`/products/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteProduct(id: string): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(`/products/${id}`, { method: 'DELETE' })
+}
+
+export async function uploadProductImage(productId: string, file: File): Promise<ProductImage> {
+  const form = new FormData()
+  form.append('image', file)
+  return request<ProductImage>(`/products/${productId}/images`, {
+    method: 'POST',
+    body: form,
+  })
+}
+
+export async function deleteProductImage(
+  productId: string,
+  imageId: string,
+): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(`/products/${productId}/images/${imageId}`, {
     method: 'DELETE',
-  })
-}
-
-// ─── Payments ────────────────────────────────────────────────────────────────
-
-export async function getPayments(
-  page = 1,
-  perPage = 50,
-  farmerId?: string,
-  status?: string,
-): Promise<PaymentWithFarmer[]> {
-  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) })
-  if (farmerId) params.set('farmer_id', farmerId)
-  if (status) params.set('status', status)
-  return request<PaymentWithFarmer[]>(`/payments?${params}`)
-}
-
-export async function createPayment(
-  payload: CreatePaymentPayload,
-): Promise<CreatePaymentResponse> {
-  return request<CreatePaymentResponse>('/payments', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
-export async function getPayment(id: string): Promise<PaymentWithFarmer> {
-  return request<PaymentWithFarmer>(`/payments/${id}`)
-}
-
-// ─── Wallet ──────────────────────────────────────────────────────────────────
-
-export async function getBalance(): Promise<Balance> {
-  return request<Balance>('/wallet/balance')
-}
-
-export async function requestWithdrawal(payload: WithdrawRequest): Promise<Withdrawal> {
-  return request<Withdrawal>('/wallet/withdraw', {
-    method: 'POST',
-    body: JSON.stringify(payload),
   })
 }
 
 // ─── Orders ──────────────────────────────────────────────────────────────────
 
-export async function getOrders(): Promise<Order[]> {
-  return request<Order[]>('/orders')
+export async function listOrders(role?: 'buyer' | 'seller'): Promise<Order[]> {
+  const q = role ? `?role=${role}` : ''
+  return request<Order[]>(`/orders${q}`)
+}
+
+export async function getOrder(id: string): Promise<Order> {
+  return request<Order>(`/orders/${id}`)
 }
 
 export async function createOrder(payload: CreateOrderPayload): Promise<Order> {
@@ -231,26 +233,104 @@ export async function createOrder(payload: CreateOrderPayload): Promise<Order> {
   })
 }
 
-export async function fillOrder(id: string): Promise<Order> {
-  return request<Order>(`/orders/${id}/fill`, {
-    method: 'PUT',
+export async function updateOrderStatus(
+  id: string,
+  payload: UpdateOrderStatusPayload,
+): Promise<Order> {
+  return request<Order>(`/orders/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
   })
 }
 
 export async function cancelOrder(id: string): Promise<{ cancelled: boolean }> {
-  return request<{ cancelled: boolean }>(`/orders/${id}`, {
-    method: 'DELETE',
+  return request<{ cancelled: boolean }>(`/orders/${id}`, { method: 'DELETE' })
+}
+
+// ─── Payments ────────────────────────────────────────────────────────────────
+
+export async function createInvoice(orderId: string): Promise<CreateInvoiceResponse> {
+  return request<CreateInvoiceResponse>('/payments/invoice', {
+    method: 'POST',
+    body: JSON.stringify({ order_id: orderId }),
   })
 }
 
-// ─── Oracle / Rate ────────────────────────────────────────────────────────────
+export async function confirmPayment(
+  paymentId: string,
+  preimage: string,
+): Promise<{ confirmed: boolean; payment_hash: string }> {
+  return request('/payments/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ payment_id: paymentId, preimage }),
+  })
+}
+
+export async function getPaymentForOrder(orderId: string): Promise<PaymentRecord> {
+  return request<PaymentRecord>(`/payments/order/${orderId}`)
+}
+
+// ─── Oracle ───────────────────────────────────────────────────────────────────
 
 export async function getRate(): Promise<ExchangeRate> {
   return request<ExchangeRate>('/oracle/rate')
 }
 
-// ─── Health ──────────────────────────────────────────────────────────────────
+// ─── WebLN payment helper ─────────────────────────────────────────────────────
+
+export const isFediContext = typeof window !== 'undefined' && !!window.nostr
+export const hasWebLN = typeof window !== 'undefined' && 'webln' in window
+
+/** Pay a bolt11 invoice via WebLN. Returns the preimage. */
+export async function payWithWebLN(bolt11: string): Promise<string> {
+  if (!window.webln) throw new Error('WebLN not available')
+  await window.webln.enable()
+  const result = await window.webln.sendPayment(bolt11)
+  return result.preimage
+}
+
+// ─── Health ───────────────────────────────────────────────────────────────────
 
 export async function getHealth(): Promise<{ status: string; version: string }> {
-  return request<{ status: string; version: string }>('/health')
+  return request('/health')
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+export function formatKes(value: string | number): string {
+  return `KES ${parseFloat(String(value)).toLocaleString('en-KE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+export function formatSats(sats: number): string {
+  if (sats >= 1_000_000) return `${(sats / 1_000_000).toFixed(2)}M sats`
+  if (sats >= 1_000) return `${(sats / 1_000).toFixed(1)}k sats`
+  return `${sats} sats`
+}
+
+export const ORDER_STATUS_LABELS: Record<string, string> = {
+  pending_payment: 'Awaiting Payment',
+  paid: 'Payment Received',
+  processing: 'Preparing',
+  in_transit: 'On the Way',
+  delivered: 'Delivered',
+  confirmed: 'Completed',
+  disputed: 'Disputed',
+  cancelled: 'Cancelled',
+}
+
+export function sellerNextStatus(current: string): OrderStatus | null {
+  const map: Record<string, OrderStatus> = {
+    paid: 'processing',
+    processing: 'in_transit',
+    in_transit: 'delivered',
+  }
+  return map[current] ?? null
+}
+
+export function buyerNextStatus(current: string): OrderStatus | null {
+  if (current === 'delivered') return 'confirmed'
+  return null
 }

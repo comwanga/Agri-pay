@@ -1,0 +1,359 @@
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
+import {
+  Plus, Package, Edit2, Trash2, ChevronDown, ChevronUp,
+  Truck, CheckCircle, Eye, EyeOff, AlertCircle,
+} from 'lucide-react'
+import {
+  listProducts, listOrders, updateProduct, deleteProduct,
+  updateOrderStatus, formatKes, ORDER_STATUS_LABELS, sellerNextStatus,
+} from '../api/client.ts'
+import { useCurrentFarmer } from '../hooks/useCurrentFarmer.ts'
+import OrderStatusSteps from './OrderStatusSteps.tsx'
+import clsx from 'clsx'
+import type { Order, Product } from '../types'
+
+// ─── My listing card ──────────────────────────────────────────────────────────
+
+function ListingCard({ product }: { product: Product }) {
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+
+  const toggleStatus = useMutation({
+    mutationFn: () =>
+      updateProduct(product.id, {
+        status: product.status === 'active' ? 'paused' : 'active',
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-products'] }),
+  })
+
+  const remove = useMutation({
+    mutationFn: () => deleteProduct(product.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-products'] }),
+  })
+
+  const primaryImage = product.images.find(i => i.is_primary) ?? product.images[0]
+
+  return (
+    <div className="card flex gap-4 p-4">
+      {/* Thumbnail */}
+      <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-800 shrink-0">
+        {primaryImage ? (
+          <img src={primaryImage.url} alt={product.title} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Package className="w-6 h-6 text-gray-600" />
+          </div>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="flex-1 min-w-0 space-y-0.5">
+        <p className="text-sm font-semibold text-gray-100 truncate">{product.title}</p>
+        <p className="text-xs text-gray-400">
+          {formatKes(product.price_kes)}/{product.unit} · {product.quantity_avail} {product.unit} available
+        </p>
+        {product.location_name && (
+          <p className="text-xs text-gray-500">{product.location_name}</p>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 shrink-0">
+        <span className={clsx(
+          'text-[11px] font-medium px-2 py-0.5 rounded-full',
+          product.status === 'active'   && 'bg-mpesa/20 text-mpesa',
+          product.status === 'paused'   && 'bg-gray-700 text-gray-400',
+          product.status === 'sold_out' && 'bg-yellow-900/20 text-yellow-400',
+        )}>
+          {product.status}
+        </span>
+
+        <button
+          onClick={() => toggleStatus.mutate()}
+          disabled={toggleStatus.isPending}
+          className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
+          title={product.status === 'active' ? 'Pause listing' : 'Activate listing'}
+        >
+          {product.status === 'active' ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
+
+        <button
+          onClick={() => navigate(`/sell/edit/${product.id}`)}
+          className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
+          title="Edit"
+        >
+          <Edit2 className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={() => {
+            if (confirm('Delete this listing?')) remove.mutate()
+          }}
+          disabled={remove.isPending}
+          className="p-1.5 rounded-lg hover:bg-red-900/20 text-gray-400 hover:text-red-400 transition-colors"
+          title="Delete"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Incoming order card ──────────────────────────────────────────────────────
+
+function IncomingOrderCard({ order }: { order: Order }) {
+  const [expanded, setExpanded] = useState(false)
+  const [deliveryDate, setDeliveryDate] = useState(order.seller_delivery_date ?? '')
+  const [notes, setNotes] = useState(order.delivery_notes ?? '')
+  const qc = useQueryClient()
+
+  const next = sellerNextStatus(order.status)
+
+  const advance = useMutation({
+    mutationFn: () =>
+      updateOrderStatus(order.id, {
+        status: next!,
+        delivery_date: deliveryDate || undefined,
+        notes: notes || undefined,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['orders', 'seller'] }),
+  })
+
+  return (
+    <div className="card overflow-hidden">
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center gap-4 p-4 text-left hover:bg-gray-800/40 transition-colors"
+      >
+        <div className="flex-1 min-w-0 space-y-0.5">
+          <p className="text-sm font-semibold text-gray-100 truncate">{order.product_title}</p>
+          <p className="text-xs text-gray-400">
+            {order.quantity} {order.unit} · {formatKes(order.total_kes)} · Buyer: {order.buyer_name}
+          </p>
+          {order.buyer_location_name && (
+            <p className="text-xs text-gray-500">
+              Deliver to: {order.buyer_location_name}
+              {order.distance_km != null ? ` (${order.distance_km.toFixed(0)} km)` : ''}
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0">
+          <span className={clsx(
+            'text-xs font-semibold px-2 py-1 rounded-full',
+            order.status === 'paid'            && 'bg-brand-500/20 text-brand-400',
+            order.status === 'processing'      && 'bg-brand-500/20 text-brand-400',
+            order.status === 'in_transit'      && 'bg-brand-500/20 text-brand-400',
+            order.status === 'delivered'       && 'bg-yellow-900/20 text-yellow-400',
+            order.status === 'confirmed'       && 'bg-mpesa/20 text-mpesa',
+            order.status === 'pending_payment' && 'bg-gray-700 text-gray-400',
+            order.status === 'cancelled'       && 'bg-red-900/20 text-red-400',
+            order.status === 'disputed'        && 'bg-yellow-900/20 text-yellow-400',
+          )}>
+            {ORDER_STATUS_LABELS[order.status] ?? order.status}
+          </span>
+          {expanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-gray-800 p-4 space-y-4">
+          <OrderStatusSteps
+            status={order.status}
+            estimatedDate={order.estimated_delivery_date}
+            sellerDate={order.seller_delivery_date}
+          />
+
+          {/* Seller can update delivery date and notes */}
+          {next && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-400">Delivery date</label>
+                  <input
+                    type="date"
+                    value={deliveryDate}
+                    onChange={e => setDeliveryDate(e.target.value)}
+                    className="input-base text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-400">Note to buyer</label>
+                  <input
+                    type="text"
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
+                    placeholder="Optional"
+                    className="input-base text-sm"
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={() => advance.mutate()}
+                disabled={advance.isPending}
+                className="btn-primary text-sm"
+              >
+                {advance.isPending ? 'Updating…' : (
+                  <>
+                    {next === 'processing' && <><Package className="w-4 h-4" /> Mark as Preparing</>}
+                    {next === 'in_transit' && <><Truck className="w-4 h-4" /> Mark as Shipped</>}
+                    {next === 'delivered'  && <><CheckCircle className="w-4 h-4" /> Mark as Delivered</>}
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          <p className="text-[11px] text-gray-600">
+            {new Date(order.created_at).toLocaleString('en-KE')}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Main dashboard ───────────────────────────────────────────────────────────
+
+export default function SellerDashboard() {
+  const navigate = useNavigate()
+  const [tab, setTab] = useState<'listings' | 'orders'>('listings')
+  const { farmerId, needsSetup } = useCurrentFarmer()
+
+  const myProductsQuery = useQuery({
+    queryKey: ['my-products', farmerId],
+    queryFn: () => (farmerId ? listProducts({ seller_id: farmerId, per_page: 100 }) : []),
+    enabled: !!farmerId,
+    staleTime: 15_000,
+  })
+
+  const { data: incomingOrders = [], isLoading: loadingOrders } = useQuery({
+    queryKey: ['orders', 'seller'],
+    queryFn: () => listOrders('seller'),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  })
+
+  const activeOrders = incomingOrders.filter(o => !['confirmed', 'cancelled'].includes(o.status))
+  const pastOrders = incomingOrders.filter(o => ['confirmed', 'cancelled'].includes(o.status))
+
+  const products = myProductsQuery.data ?? []
+
+  return (
+    <div className="p-6 space-y-6 max-w-3xl">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-100">My Listings</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Manage products and incoming orders</p>
+        </div>
+        <button onClick={() => navigate('/sell/new')} className="btn-primary text-sm">
+          <Plus className="w-4 h-4" />
+          New Listing
+        </button>
+      </div>
+
+      {/* Lightning Address warning */}
+      {needsSetup && (
+        <button
+          onClick={() => navigate('/profile?setup=1')}
+          className="w-full flex gap-3 items-start bg-yellow-900/20 border border-yellow-700/30 rounded-xl p-4 text-left hover:bg-yellow-900/30 transition-colors"
+        >
+          <AlertCircle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <p className="text-sm font-semibold text-yellow-300">Set your Lightning Address</p>
+            <p className="text-xs text-yellow-500/80">
+              Buyers cannot pay you until you add a Lightning Address. Tap to set it up.
+            </p>
+          </div>
+        </button>
+      )}
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-800 p-1 rounded-lg w-fit">
+        <button
+          onClick={() => setTab('listings')}
+          className={clsx(
+            'px-4 py-1.5 rounded-md text-sm font-medium transition-colors',
+            tab === 'listings' ? 'bg-gray-700 text-gray-100' : 'text-gray-400 hover:text-gray-200',
+          )}
+        >
+          Listings {products.length > 0 && `(${products.length})`}
+        </button>
+        <button
+          onClick={() => setTab('orders')}
+          className={clsx(
+            'px-4 py-1.5 rounded-md text-sm font-medium transition-colors relative',
+            tab === 'orders' ? 'bg-gray-700 text-gray-100' : 'text-gray-400 hover:text-gray-200',
+          )}
+        >
+          Orders
+          {activeOrders.length > 0 && (
+            <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-brand-500 text-[10px] text-white font-bold">
+              {activeOrders.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Listings tab */}
+      {tab === 'listings' && (
+        <div className="space-y-3">
+          {myProductsQuery.isLoading && (
+            <div className="space-y-3">
+              {[1, 2].map(i => <div key={i} className="card h-20 skeleton" />)}
+            </div>
+          )}
+          {!myProductsQuery.isLoading && products.length === 0 && (
+            <div className="text-center py-16 space-y-3">
+              <Package className="w-12 h-12 text-gray-700 mx-auto" />
+              <p className="text-gray-400 font-medium">No listings yet</p>
+              <p className="text-sm text-gray-600">Create your first product listing to start selling</p>
+              <button onClick={() => navigate('/sell/new')} className="btn-primary text-sm">
+                <Plus className="w-4 h-4" />
+                Create Listing
+              </button>
+            </div>
+          )}
+          {products.map(p => <ListingCard key={p.id} product={p} />)}
+        </div>
+      )}
+
+      {/* Orders tab */}
+      {tab === 'orders' && (
+        <div className="space-y-6">
+          {loadingOrders && (
+            <div className="space-y-3">
+              {[1, 2].map(i => <div key={i} className="card h-16 skeleton" />)}
+            </div>
+          )}
+
+          {!loadingOrders && incomingOrders.length === 0 && (
+            <div className="text-center py-16 space-y-2">
+              <Package className="w-12 h-12 text-gray-700 mx-auto" />
+              <p className="text-gray-400 font-medium">No orders received yet</p>
+              <p className="text-sm text-gray-600">Orders will appear here when buyers purchase your products</p>
+            </div>
+          )}
+
+          {activeOrders.length > 0 && (
+            <section className="space-y-3">
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Active</h2>
+              {activeOrders.map(o => <IncomingOrderCard key={o.id} order={o} />)}
+            </section>
+          )}
+
+          {pastOrders.length > 0 && (
+            <section className="space-y-3">
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Completed / Cancelled</h2>
+              {pastOrders.map(o => <IncomingOrderCard key={o.id} order={o} />)}
+            </section>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

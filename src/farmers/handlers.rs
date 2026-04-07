@@ -1,6 +1,7 @@
 use crate::auth::jwt::{Claims, Role};
 use crate::error::{AppError, AppResult};
 use crate::state::SharedState;
+use anyhow::Result;
 use axum::{
     extract::{Path, State},
     Json,
@@ -11,15 +12,42 @@ use sqlx::FromRow;
 use uuid::Uuid;
 
 const MAX_NAME_LEN: usize = 200;
-const MAX_COOPERATIVE_LEN: usize = 200;
 const MAX_PIN_LEN: usize = 10;
+const MAX_LOCATION_LEN: usize = 200;
+const MAX_LN_ADDRESS_LEN: usize = 300;
+
+// ── Phone normalisation (kept here since M-Pesa module is removed) ────────────
+
+pub fn normalize_phone(phone: &str) -> Result<String> {
+    let digits: String = phone.chars().filter(|c| c.is_ascii_digit()).collect();
+    let normalized = if digits.starts_with("254") {
+        digits
+    } else if let Some(stripped) = digits.strip_prefix('0') {
+        format!("254{}", stripped)
+    } else if digits.starts_with('7') || digits.starts_with('1') {
+        format!("254{}", digits)
+    } else {
+        return Err(anyhow::anyhow!("Invalid phone number: {}", phone));
+    };
+    if normalized.len() != 12 {
+        return Err(anyhow::anyhow!(
+            "Phone number must be 12 digits after normalisation, got: {}",
+            normalized
+        ));
+    }
+    Ok(normalized)
+}
+
+// ── Response / request types ──────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, FromRow)]
 pub struct Farmer {
     pub id: Uuid,
     pub name: String,
-    pub phone: String,
-    pub cooperative: String,
+    pub phone: Option<String>,
+    pub nostr_pubkey: Option<String>,
+    pub ln_address: Option<String>,
+    pub location_name: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -27,16 +55,21 @@ pub struct Farmer {
 pub struct CreateFarmerRequest {
     pub name: String,
     pub phone: String,
-    pub cooperative: String,
+    pub cooperative: Option<String>,
     pub pin: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateFarmerRequest {
     pub name: Option<String>,
-    pub cooperative: Option<String>,
     pub pin: Option<String>,
+    pub ln_address: Option<String>,
+    pub location_name: Option<String>,
+    pub location_lat: Option<f64>,
+    pub location_lng: Option<f64>,
 }
+
+// ── Handlers ──────────────────────────────────────────────────────────────────
 
 /// GET /api/farmers
 pub async fn list_farmers(
@@ -49,7 +82,8 @@ pub async fn list_farmers(
     }
 
     let farmers: Vec<Farmer> = sqlx::query_as(
-        "SELECT id, name, phone, cooperative, created_at FROM farmers ORDER BY created_at DESC",
+        "SELECT id, name, phone, nostr_pubkey, ln_address, location_name, created_at
+         FROM farmers ORDER BY created_at DESC",
     )
     .fetch_all(&state.db)
     .await?;
@@ -57,7 +91,7 @@ pub async fn list_farmers(
     Ok(Json(farmers))
 }
 
-/// POST /api/farmers
+/// POST /api/farmers  (admin creates a farmer with phone + PIN)
 pub async fn create_farmer(
     State(state): State<SharedState>,
     claims: Claims,
@@ -67,27 +101,21 @@ pub async fn create_farmer(
         return Err(AppError::Forbidden("Admin only".into()));
     }
 
-    if body.name.trim().is_empty() {
+    let name = body.name.trim().to_string();
+    if name.is_empty() {
         return Err(AppError::BadRequest("name is required".into()));
     }
-    if body.name.len() > MAX_NAME_LEN {
+    if name.len() > MAX_NAME_LEN {
         return Err(AppError::BadRequest(format!(
-            "name exceeds maximum length of {} characters",
+            "name exceeds {} characters",
             MAX_NAME_LEN
-        )));
-    }
-    if body.cooperative.len() > MAX_COOPERATIVE_LEN {
-        return Err(AppError::BadRequest(format!(
-            "cooperative exceeds maximum length of {} characters",
-            MAX_COOPERATIVE_LEN
         )));
     }
     if body.phone.trim().is_empty() {
         return Err(AppError::BadRequest("phone is required".into()));
     }
 
-    let phone = crate::mpesa::normalize_phone(&body.phone)
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let phone = normalize_phone(&body.phone).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let pin_hash: Option<String> = if let Some(pin) = &body.pin {
         if pin.len() < 4 {
@@ -95,7 +123,7 @@ pub async fn create_farmer(
         }
         if pin.len() > MAX_PIN_LEN {
             return Err(AppError::BadRequest(format!(
-                "PIN exceeds maximum length of {} characters",
+                "PIN exceeds {} characters",
                 MAX_PIN_LEN
             )));
         }
@@ -108,23 +136,20 @@ pub async fn create_farmer(
     };
 
     let id: Uuid = sqlx::query_scalar(
-        "INSERT INTO farmers (name, phone, cooperative, pin_hash) VALUES ($1, $2, $3, $4) RETURNING id",
+        "INSERT INTO farmers (name, phone, cooperative, pin_hash)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id",
     )
-    .bind(body.name.trim())
+    .bind(&name)
     .bind(&phone)
-    .bind(body.cooperative.trim())
+    .bind(body.cooperative.as_deref().unwrap_or("").trim())
     .bind(&pin_hash)
     .fetch_one(&state.db)
     .await?;
 
-    // Initialize balance row
-    sqlx::query("INSERT INTO balances (farmer_id) VALUES ($1) ON CONFLICT DO NOTHING")
-        .bind(id)
-        .execute(&state.db)
-        .await?;
-
     let farmer: Farmer = sqlx::query_as(
-        "SELECT id, name, phone, cooperative, created_at FROM farmers WHERE id = $1",
+        "SELECT id, name, phone, nostr_pubkey, ln_address, location_name, created_at
+         FROM farmers WHERE id = $1",
     )
     .bind(id)
     .fetch_one(&state.db)
@@ -144,7 +169,8 @@ pub async fn get_farmer(
     }
 
     let farmer: Option<Farmer> = sqlx::query_as(
-        "SELECT id, name, phone, cooperative, created_at FROM farmers WHERE id = $1",
+        "SELECT id, name, phone, nostr_pubkey, ln_address, location_name, created_at
+         FROM farmers WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(&state.db)
@@ -156,22 +182,22 @@ pub async fn get_farmer(
 }
 
 /// PUT /api/farmers/:id
+/// Admin can update any farmer. Farmers can update their own profile.
 pub async fn update_farmer(
     State(state): State<SharedState>,
     claims: Claims,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateFarmerRequest>,
 ) -> AppResult<Json<Farmer>> {
-    if claims.role != Role::Admin {
-        return Err(AppError::Forbidden("Admin only".into()));
+    // Farmers can only update their own profile; admin can update anyone
+    if claims.role == Role::Farmer && claims.farmer_id != Some(id) {
+        return Err(AppError::Forbidden("You can only update your own profile".into()));
+    }
+    if claims.role == Role::Operator {
+        return Err(AppError::Forbidden("Admin or farmer required".into()));
     }
 
-    #[derive(FromRow)]
-    struct FarmerCheck {
-        #[allow(dead_code)]
-        id: Uuid,
-    }
-    let exists: Option<FarmerCheck> = sqlx::query_as("SELECT id FROM farmers WHERE id = $1")
+    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM farmers WHERE id = $1")
         .bind(id)
         .fetch_optional(&state.db)
         .await?;
@@ -179,16 +205,60 @@ pub async fn update_farmer(
         return Err(AppError::NotFound(format!("Farmer {} not found", id)));
     }
 
-    let pin_hash: Option<String> = if let Some(pin) = &body.pin {
+    if let Some(ref name) = body.name {
+        let n = name.trim();
+        if n.is_empty() {
+            return Err(AppError::BadRequest("name cannot be empty".into()));
+        }
+        if n.len() > MAX_NAME_LEN {
+            return Err(AppError::BadRequest(format!(
+                "name exceeds {} characters",
+                MAX_NAME_LEN
+            )));
+        }
+    }
+
+    if let Some(ref pin) = body.pin {
         if pin.len() < 4 {
             return Err(AppError::BadRequest("PIN must be at least 4 digits".into()));
         }
         if pin.len() > MAX_PIN_LEN {
             return Err(AppError::BadRequest(format!(
-                "PIN exceeds maximum length of {} characters",
+                "PIN exceeds {} characters",
                 MAX_PIN_LEN
             )));
         }
+    }
+
+    if let Some(ref ln) = body.ln_address {
+        let ln = ln.trim();
+        if !ln.is_empty() {
+            if ln.len() > MAX_LN_ADDRESS_LEN {
+                return Err(AppError::BadRequest(format!(
+                    "ln_address exceeds {} characters",
+                    MAX_LN_ADDRESS_LEN
+                )));
+            }
+            // Basic format check: must contain exactly one '@'
+            let at_count = ln.chars().filter(|&c| c == '@').count();
+            if at_count != 1 {
+                return Err(AppError::BadRequest(
+                    "ln_address must be in user@domain format".into(),
+                ));
+            }
+        }
+    }
+
+    if let Some(ref loc) = body.location_name {
+        if loc.len() > MAX_LOCATION_LEN {
+            return Err(AppError::BadRequest(format!(
+                "location_name exceeds {} characters",
+                MAX_LOCATION_LEN
+            )));
+        }
+    }
+
+    let pin_hash: Option<String> = if let Some(ref pin) = body.pin {
         Some(
             bcrypt::hash(pin, bcrypt::DEFAULT_COST)
                 .map_err(|e| AppError::Internal(anyhow::anyhow!("bcrypt error: {}", e)))?,
@@ -197,39 +267,29 @@ pub async fn update_farmer(
         None
     };
 
-    if let Some(ref name) = body.name {
-        if name.len() > MAX_NAME_LEN {
-            return Err(AppError::BadRequest(format!(
-                "name exceeds maximum length of {} characters",
-                MAX_NAME_LEN
-            )));
-        }
-    }
-    if let Some(ref coop) = body.cooperative {
-        if coop.len() > MAX_COOPERATIVE_LEN {
-            return Err(AppError::BadRequest(format!(
-                "cooperative exceeds maximum length of {} characters",
-                MAX_COOPERATIVE_LEN
-            )));
-        }
-    }
-
     sqlx::query(
         "UPDATE farmers SET
-            name        = COALESCE($2, name),
-            cooperative = COALESCE($3, cooperative),
-            pin_hash    = COALESCE($4, pin_hash)
+            name          = COALESCE($2, name),
+            pin_hash      = COALESCE($3, pin_hash),
+            ln_address    = COALESCE($4, ln_address),
+            location_name = COALESCE($5, location_name),
+            location_lat  = COALESCE($6, location_lat),
+            location_lng  = COALESCE($7, location_lng)
          WHERE id = $1",
     )
     .bind(id)
-    .bind(&body.name)
-    .bind(&body.cooperative)
+    .bind(body.name.as_deref().map(str::trim))
     .bind(&pin_hash)
+    .bind(body.ln_address.as_deref().map(str::trim))
+    .bind(body.location_name.as_deref().map(str::trim))
+    .bind(body.location_lat)
+    .bind(body.location_lng)
     .execute(&state.db)
     .await?;
 
     let farmer: Farmer = sqlx::query_as(
-        "SELECT id, name, phone, cooperative, created_at FROM farmers WHERE id = $1",
+        "SELECT id, name, phone, nostr_pubkey, ln_address, location_name, created_at
+         FROM farmers WHERE id = $1",
     )
     .bind(id)
     .fetch_one(&state.db)
@@ -238,7 +298,7 @@ pub async fn update_farmer(
     Ok(Json(farmer))
 }
 
-/// DELETE /api/farmers/:id
+/// DELETE /api/farmers/:id  (admin only)
 pub async fn delete_farmer(
     State(state): State<SharedState>,
     claims: Claims,
@@ -258,4 +318,41 @@ pub async fn delete_farmer(
     }
 
     Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_phone;
+
+    #[test]
+    fn test_normalize_safaricom_07xx() {
+        assert_eq!(normalize_phone("0712345678").unwrap(), "254712345678");
+    }
+
+    #[test]
+    fn test_normalize_safaricom_01xx() {
+        assert_eq!(normalize_phone("0112345678").unwrap(), "254112345678");
+    }
+
+    #[test]
+    fn test_normalize_already_254() {
+        assert_eq!(normalize_phone("254712345678").unwrap(), "254712345678");
+    }
+
+    #[test]
+    fn test_normalize_with_plus() {
+        assert_eq!(normalize_phone("+254712345678").unwrap(), "254712345678");
+    }
+
+    #[test]
+    fn test_normalize_bare_7xx() {
+        assert_eq!(normalize_phone("712345678").unwrap(), "254712345678");
+    }
+
+    #[test]
+    fn test_normalize_rejects_short() {
+        assert!(normalize_phone("071234567").is_err());
+    }
 }

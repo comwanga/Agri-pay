@@ -84,7 +84,7 @@ pub async fn nostr_login(
     // 6. Verify BIP-340 Schnorr signature
     verify_schnorr(&event.pubkey, &event.id, &event.sig)?;
 
-    // 7. Find or create farmer by Nostr pubkey
+    // 7. Find or create user by Nostr pubkey
     let pubkey = &event.pubkey;
 
     let existing: Option<Uuid> =
@@ -96,24 +96,16 @@ pub async fn nostr_login(
     let farmer_id = match existing {
         Some(id) => id,
         None => {
-            let id: Uuid = sqlx::query_scalar(
-                "INSERT INTO farmers (name, phone, nostr_pubkey)
-                 VALUES ($1, $2, $3)
+            // New user: create a farmers row. Phone is NULL for Nostr-only accounts.
+            sqlx::query_scalar(
+                "INSERT INTO farmers (name, nostr_pubkey)
+                 VALUES ($1, $2)
                  RETURNING id",
             )
             .bind(format!("Member {}", &pubkey[..8]))
-            .bind(format!("nostr:{}", pubkey))
             .bind(pubkey)
             .fetch_one(&state.db)
-            .await?;
-
-            // Initialize balance row
-            sqlx::query("INSERT INTO balances (farmer_id) VALUES ($1) ON CONFLICT DO NOTHING")
-                .bind(id)
-                .execute(&state.db)
-                .await?;
-
-            id
+            .await?
         }
     };
 

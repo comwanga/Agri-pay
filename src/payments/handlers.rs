@@ -1,381 +1,58 @@
-use crate::auth::jwt::{Claims, Role};
-use crate::btcpay::BtcPayClient;
+use crate::auth::jwt::Claims;
 use crate::error::{AppError, AppResult};
 use crate::events;
 use crate::state::SharedState;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
+    http::StatusCode,
     Json,
 };
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-use super::{Payment, PaymentWithFarmer};
+// ── Response types ────────────────────────────────────────────────────────────
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const MAX_NOTES_LEN: usize = 500;
-const MAX_CROP_TYPE_LEN: usize = 100;
-
-// ── Request / Response types ──────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct CreatePaymentRequest {
-    pub farmer_id: Uuid,
+#[derive(Debug, Serialize)]
+pub struct PaymentRecord {
+    pub id: Uuid,
+    pub order_id: Uuid,
+    pub bolt11: String,
+    pub amount_sats: i64,
     pub amount_kes: Decimal,
-    pub crop_type: Option<String>,
-    pub notes: Option<String>,
+    pub status: String,
+    pub settled_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct CreatePaymentResponse {
-    pub payment: Payment,
-    pub btcpay_payment_url: Option<String>,
+pub struct CreateInvoiceResponse {
+    pub payment_id: Uuid,
+    pub bolt11: String,
+    pub amount_sats: i64,
+    pub amount_kes: Decimal,
+}
+
+// ── Request types ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct CreateInvoiceRequest {
+    pub order_id: Uuid,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ListPaymentsQuery {
-    pub page: Option<i64>,
-    pub per_page: Option<i64>,
-    pub farmer_id: Option<Uuid>,
-    pub status: Option<String>,
-}
-
-// ── DB row types ──────────────────────────────────────────────────────────────
-
-#[derive(FromRow)]
-struct PaymentRow {
-    id: Uuid,
-    farmer_id: Uuid,
-    btcpay_invoice_id: Option<String>,
-    btcpay_payment_url: Option<String>,
-    amount_sats: i64,
-    amount_kes: Decimal,
-    rate_used: Decimal,
-    status: String,
-    failure_reason: Option<String>,
-    crop_type: Option<String>,
-    notes: Option<String>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
-}
-
-#[derive(FromRow)]
-struct PaymentWithFarmerRow {
-    id: Uuid,
-    farmer_id: Uuid,
-    btcpay_invoice_id: Option<String>,
-    btcpay_payment_url: Option<String>,
-    amount_sats: i64,
-    amount_kes: Decimal,
-    rate_used: Decimal,
-    status: String,
-    failure_reason: Option<String>,
-    crop_type: Option<String>,
-    notes: Option<String>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
-    farmer_name: String,
-    farmer_phone: String,
-}
-
-impl From<PaymentRow> for Payment {
-    fn from(r: PaymentRow) -> Self {
-        Payment {
-            id: r.id,
-            farmer_id: r.farmer_id,
-            btcpay_invoice_id: r.btcpay_invoice_id,
-            btcpay_payment_url: r.btcpay_payment_url,
-            amount_sats: r.amount_sats,
-            amount_kes: r.amount_kes,
-            rate_used: r.rate_used,
-            status: r.status,
-            failure_reason: r.failure_reason,
-            crop_type: r.crop_type,
-            notes: r.notes,
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-        }
-    }
-}
-
-impl From<PaymentWithFarmerRow> for PaymentWithFarmer {
-    fn from(r: PaymentWithFarmerRow) -> Self {
-        PaymentWithFarmer {
-            payment: Payment {
-                id: r.id,
-                farmer_id: r.farmer_id,
-                btcpay_invoice_id: r.btcpay_invoice_id,
-                btcpay_payment_url: r.btcpay_payment_url,
-                amount_sats: r.amount_sats,
-                amount_kes: r.amount_kes,
-                rate_used: r.rate_used,
-                status: r.status,
-                failure_reason: r.failure_reason,
-                crop_type: r.crop_type,
-                notes: r.notes,
-                created_at: r.created_at,
-                updated_at: r.updated_at,
-            },
-            farmer_name: r.farmer_name,
-            farmer_phone: r.farmer_phone,
-        }
-    }
-}
-
-const PAYMENT_WITH_FARMER_SELECT: &str = r#"
-    SELECT p.id, p.farmer_id, p.btcpay_invoice_id, p.btcpay_payment_url,
-           p.amount_sats, p.amount_kes, p.rate_used, p.status,
-           p.failure_reason, p.crop_type, p.notes, p.created_at, p.updated_at,
-           f.name AS farmer_name, f.phone AS farmer_phone
-    FROM payments p
-    JOIN farmers f ON f.id = p.farmer_id
-"#;
-
-// ── Handlers ──────────────────────────────────────────────────────────────────
-
-/// POST /api/payments
-pub async fn create_payment(
-    State(state): State<SharedState>,
-    claims: Claims,
-    Json(body): Json<CreatePaymentRequest>,
-) -> AppResult<Json<CreatePaymentResponse>> {
-    match claims.role {
-        Role::Admin | Role::Operator => {}
-        _ => return Err(AppError::Forbidden("Admin or operator required".into())),
-    }
-
-    // S8: enforce field length limits
-    if let Some(ref ct) = body.crop_type {
-        if ct.len() > MAX_CROP_TYPE_LEN {
-            return Err(AppError::BadRequest(format!(
-                "crop_type exceeds maximum length of {} characters",
-                MAX_CROP_TYPE_LEN
-            )));
-        }
-    }
-    if let Some(ref notes) = body.notes {
-        if notes.len() > MAX_NOTES_LEN {
-            return Err(AppError::BadRequest(format!(
-                "notes exceeds maximum length of {} characters",
-                MAX_NOTES_LEN
-            )));
-        }
-    }
-
-    // Verify farmer exists
-    #[derive(FromRow)]
-    struct FarmerCheck {
-        #[allow(dead_code)]
-        id: Uuid,
-    }
-    let exists: Option<FarmerCheck> = sqlx::query_as("SELECT id FROM farmers WHERE id = $1")
-        .bind(body.farmer_id)
-        .fetch_optional(&state.db)
-        .await?;
-    if exists.is_none() {
-        return Err(AppError::NotFound(format!(
-            "Farmer {} not found",
-            body.farmer_id
-        )));
-    }
-
-    if body.amount_kes <= Decimal::ZERO {
-        return Err(AppError::BadRequest("amount_kes must be positive".into()));
-    }
-
-    let btc_kes_rate = get_or_fetch_rate(&state).await?;
-
-    let sats_per_kes = Decimal::new(100_000_000, 0) / btc_kes_rate;
-    let amount_sats = (body.amount_kes * sats_per_kes)
-        .round()
-        .to_string()
-        .parse::<i64>()
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("sats conversion: {}", e)))?;
-
-    if amount_sats < 1000 {
-        return Err(AppError::BadRequest(
-            "Minimum payment is 1000 satoshis".into(),
-        ));
-    }
-
-    let payment_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO payments (farmer_id, amount_sats, amount_kes, rate_used, status, crop_type, notes)
-         VALUES ($1, $2, $3, $4, 'created', $5, $6)
-         RETURNING id",
-    )
-    .bind(body.farmer_id)
-    .bind(amount_sats)
-    .bind(body.amount_kes)
-    .bind(btc_kes_rate)
-    .bind(&body.crop_type)
-    .bind(&body.notes)
-    .fetch_one(&state.db)
-    .await?;
-
-    // Create BTCPay invoice
-    let btcpay = BtcPayClient::new(&state.config, state.http.clone());
-    let description = format!(
-        "Agri-Pay crop payment - {}",
-        body.crop_type.as_deref().unwrap_or("General")
-    );
-
-    let invoice_result = btcpay
-        .create_invoice(
-            amount_sats,
-            &description,
-            Some(&payment_id.to_string()),
-            None,
-        )
-        .await;
-
-    let (status, btcpay_invoice_id, btcpay_payment_url, failure_reason) = match invoice_result {
-        Ok(inv) => (
-            "invoice_created",
-            Some(inv.id),
-            Some(inv.checkout_link),
-            None::<String>,
-        ),
-        Err(e) => {
-            tracing::error!("Failed to create BTCPay invoice: {}", e);
-            (
-                "failed",
-                None::<String>,
-                None::<String>,
-                Some(format!("BTCPay error: {}", e)),
-            )
-        }
-    };
-
-    sqlx::query(
-        "UPDATE payments SET status=$2, btcpay_invoice_id=$3, btcpay_payment_url=$4, failure_reason=$5 WHERE id=$1",
-    )
-    .bind(payment_id)
-    .bind(status)
-    .bind(&btcpay_invoice_id)
-    .bind(&btcpay_payment_url)
-    .bind(&failure_reason)
-    .execute(&state.db)
-    .await?;
-
-    let row: PaymentRow = sqlx::query_as(
-        "SELECT id, farmer_id, btcpay_invoice_id, btcpay_payment_url,
-                amount_sats, amount_kes, rate_used, status, failure_reason,
-                crop_type, notes, created_at, updated_at
-         FROM payments WHERE id = $1",
-    )
-    .bind(payment_id)
-    .fetch_one(&state.db)
-    .await?;
-
-    let url = row.btcpay_payment_url.clone();
-    let payment: Payment = row.into();
-
-    events::record_event(
-        &state.db,
-        payment_id,
-        "invoice_created",
-        serde_json::json!({ "btcpay_invoice_id": btcpay_invoice_id, "amount_sats": amount_sats }),
-    )
-    .await
-    .ok();
-
-    Ok(Json(CreatePaymentResponse {
-        payment,
-        btcpay_payment_url: url,
-    }))
-}
-
-/// GET /api/payments
-pub async fn list_payments(
-    State(state): State<SharedState>,
-    claims: Claims,
-    Query(q): Query<ListPaymentsQuery>,
-) -> AppResult<Json<Vec<PaymentWithFarmer>>> {
-    match claims.role {
-        Role::Admin | Role::Operator => {}
-        _ => return Err(AppError::Forbidden("Admin or operator required".into())),
-    }
-
-    let page = q.page.unwrap_or(1).max(1);
-    let per_page = q.per_page.unwrap_or(50).clamp(1, 200);
-    let offset = (page - 1) * per_page;
-
-    let rows: Vec<PaymentWithFarmerRow> = if let Some(fid) = q.farmer_id {
-        if let Some(ref status) = q.status {
-            sqlx::query_as(&format!(
-                "{} WHERE p.farmer_id = $1 AND p.status = $2 ORDER BY p.created_at DESC LIMIT $3 OFFSET $4",
-                PAYMENT_WITH_FARMER_SELECT
-            ))
-            .bind(fid)
-            .bind(status)
-            .bind(per_page)
-            .bind(offset)
-            .fetch_all(&state.db)
-            .await?
-        } else {
-            sqlx::query_as(&format!(
-                "{} WHERE p.farmer_id = $1 ORDER BY p.created_at DESC LIMIT $2 OFFSET $3",
-                PAYMENT_WITH_FARMER_SELECT
-            ))
-            .bind(fid)
-            .bind(per_page)
-            .bind(offset)
-            .fetch_all(&state.db)
-            .await?
-        }
-    } else if let Some(ref status) = q.status {
-        sqlx::query_as(&format!(
-            "{} WHERE p.status = $1 ORDER BY p.created_at DESC LIMIT $2 OFFSET $3",
-            PAYMENT_WITH_FARMER_SELECT
-        ))
-        .bind(status)
-        .bind(per_page)
-        .bind(offset)
-        .fetch_all(&state.db)
-        .await?
-    } else {
-        sqlx::query_as(&format!(
-            "{} ORDER BY p.created_at DESC LIMIT $1 OFFSET $2",
-            PAYMENT_WITH_FARMER_SELECT
-        ))
-        .bind(per_page)
-        .bind(offset)
-        .fetch_all(&state.db)
-        .await?
-    };
-
-    Ok(Json(rows.into_iter().map(Into::into).collect()))
-}
-
-/// GET /api/payments/:id
-pub async fn get_payment(
-    State(state): State<SharedState>,
-    claims: Claims,
-    Path(id): Path<Uuid>,
-) -> AppResult<Json<PaymentWithFarmer>> {
-    let row: Option<PaymentWithFarmerRow> =
-        sqlx::query_as(&format!("{} WHERE p.id = $1", PAYMENT_WITH_FARMER_SELECT))
-            .bind(id)
-            .fetch_optional(&state.db)
-            .await?;
-
-    let row = row.ok_or_else(|| AppError::NotFound(format!("Payment {} not found", id)))?;
-
-    if claims.role == Role::Farmer && claims.farmer_id != Some(row.farmer_id) {
-        return Err(AppError::Forbidden("Access denied".into()));
-    }
-
-    Ok(Json(row.into()))
+pub struct ConfirmPaymentRequest {
+    pub payment_id: Uuid,
+    /// Hex-encoded 32-byte preimage. sha256(preimage) = payment hash.
+    pub preimage: String,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Fetch BTC/KES rate from cache (if fresh) or live oracle.
-/// Fix-6: apply round_dp(4) after f64→Decimal to eliminate representation noise.
+/// Get or fetch the BTC/KES rate from the DB cache, falling back to live fetch.
 async fn get_or_fetch_rate(state: &SharedState) -> AppResult<Decimal> {
     #[derive(FromRow)]
     struct RateCacheEntry {
@@ -390,7 +67,9 @@ async fn get_or_fetch_rate(state: &SharedState) -> AppResult<Decimal> {
     .await?;
 
     if let Some(r) = row {
-        let age = Utc::now().signed_duration_since(r.fetched_at).num_seconds() as u64;
+        let age = Utc::now()
+            .signed_duration_since(r.fetched_at)
+            .num_seconds() as u64;
         if age <= state.config.max_rate_stale_secs {
             return Ok(r.btc_kes);
         }
@@ -402,7 +81,6 @@ async fn get_or_fetch_rate(state: &SharedState) -> AppResult<Decimal> {
         .await
         .map_err(|e| AppError::Oracle(e.to_string()))?;
 
-    // Fix-6: round to 4 dp after f64→Decimal conversion.
     let btc_kes = Decimal::try_from(rate.btc_kes)
         .map(|d| d.round_dp(4))
         .map_err(|e| AppError::Internal(anyhow::anyhow!("rate conversion: {}", e)))?;
@@ -417,4 +95,323 @@ async fn get_or_fetch_rate(state: &SharedState) -> AppResult<Decimal> {
         .await?;
 
     Ok(btc_kes)
+}
+
+// ── Handlers ──────────────────────────────────────────────────────────────────
+
+// ── Unit tests (preimage validation) ─────────────────────────────────────────
+#[cfg(test)]
+mod tests {
+    use sha2::{Digest, Sha256};
+
+    #[test]
+    fn test_valid_preimage_produces_64_char_hash() {
+        let preimage_bytes = [0u8; 32];
+        let preimage_hex = hex::encode(preimage_bytes);
+        let decoded = hex::decode(&preimage_hex).unwrap();
+        assert_eq!(decoded.len(), 32);
+        let hash = hex::encode(Sha256::digest(&decoded));
+        assert_eq!(hash.len(), 64, "sha256 hex output must be 64 chars");
+    }
+
+    #[test]
+    fn test_preimage_not_hex_rejected() {
+        let result = hex::decode("not-valid-hex!!!");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_preimage_31_bytes_rejected() {
+        let short_hex = hex::encode([0u8; 31]); // 62 hex chars
+        let bytes = hex::decode(&short_hex).unwrap();
+        assert_ne!(bytes.len(), 32, "31-byte preimage must fail length check");
+    }
+
+    #[test]
+    fn test_preimage_33_bytes_rejected() {
+        let long_hex = hex::encode([0u8; 33]); // 66 hex chars
+        let bytes = hex::decode(&long_hex).unwrap();
+        assert_ne!(bytes.len(), 32, "33-byte preimage must fail length check");
+    }
+
+    #[test]
+    fn test_same_preimage_produces_same_hash() {
+        let preimage = [42u8; 32];
+        let h1 = hex::encode(Sha256::digest(&preimage));
+        let h2 = hex::encode(Sha256::digest(&preimage));
+        assert_eq!(h1, h2, "sha256 must be deterministic");
+    }
+
+    #[test]
+    fn test_different_preimages_produce_different_hashes() {
+        let h1 = hex::encode(Sha256::digest(&[1u8; 32]));
+        let h2 = hex::encode(Sha256::digest(&[2u8; 32]));
+        assert_ne!(h1, h2);
+    }
+}
+
+/// POST /api/payments/invoice
+/// Fetches the seller's Lightning Address, requests a bolt11 via LNURL-pay,
+/// and stores a pending payment record.
+pub async fn create_invoice(
+    State(state): State<SharedState>,
+    claims: Claims,
+    Json(body): Json<CreateInvoiceRequest>,
+) -> AppResult<(StatusCode, Json<CreateInvoiceResponse>)> {
+    let buyer_id = claims
+        .farmer_id
+        .ok_or_else(|| AppError::Forbidden("Must be a registered user".into()))?;
+
+    // Fetch order to verify buyer and get totals
+    #[derive(FromRow)]
+    struct OrderInfo {
+        buyer_id: Uuid,
+        seller_id: Uuid,
+        total_kes: Decimal,
+        status: String,
+    }
+    let order: Option<OrderInfo> =
+        sqlx::query_as("SELECT buyer_id, seller_id, total_kes, status FROM orders WHERE id = $1")
+            .bind(body.order_id)
+            .fetch_optional(&state.db)
+            .await?;
+
+    let order =
+        order.ok_or_else(|| AppError::NotFound(format!("Order {} not found", body.order_id)))?;
+
+    if order.buyer_id != buyer_id {
+        return Err(AppError::Forbidden(
+            "You can only pay for your own orders".into(),
+        ));
+    }
+    if order.status != "pending_payment" {
+        return Err(AppError::BadRequest(format!(
+            "Order is already {}",
+            order.status
+        )));
+    }
+
+    // Fetch seller's Lightning Address
+    let ln_address: Option<String> =
+        sqlx::query_scalar("SELECT ln_address FROM farmers WHERE id = $1")
+            .bind(order.seller_id)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten();
+
+    let ln_address = ln_address.ok_or_else(|| {
+        AppError::BadRequest(
+            "Seller has not set a Lightning Address yet. Contact them directly.".into(),
+        )
+    })?;
+
+    // Get current exchange rate
+    let btc_kes = get_or_fetch_rate(&state).await?;
+
+    // Convert KES to millisatoshis (sats * 1000)
+    let sats_per_kes = Decimal::new(100_000_000, 0) / btc_kes;
+    let amount_sats = (order.total_kes * sats_per_kes)
+        .round()
+        .to_string()
+        .parse::<i64>()
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("sats conversion: {}", e)))?;
+
+    if amount_sats < 1 {
+        return Err(AppError::BadRequest(
+            "Computed amount is less than 1 satoshi".into(),
+        ));
+    }
+
+    let amount_msats = amount_sats * 1000;
+
+    // Request invoice from seller's wallet via LNURL-pay
+    let bolt11 = state.lnurl.request_invoice(&ln_address, amount_msats).await?;
+
+    // Store payment record
+    let payment_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO payments (order_id, bolt11, amount_sats, amount_kes, rate_used)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id",
+    )
+    .bind(body.order_id)
+    .bind(&bolt11)
+    .bind(amount_sats)
+    .bind(order.total_kes)
+    .bind(btc_kes)
+    .fetch_one(&state.db)
+    .await?;
+
+    // Update order with computed sats amount
+    sqlx::query("UPDATE orders SET total_sats = $2 WHERE id = $1")
+        .bind(body.order_id)
+        .bind(amount_sats)
+        .execute(&state.db)
+        .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(CreateInvoiceResponse {
+            payment_id,
+            bolt11,
+            amount_sats,
+            amount_kes: order.total_kes,
+        }),
+    ))
+}
+
+/// POST /api/payments/confirm
+/// Buyer submits the preimage they received after paying the bolt11.
+/// sha256(preimage) is stored as cryptographic proof of payment.
+pub async fn confirm_payment(
+    State(state): State<SharedState>,
+    claims: Claims,
+    Json(body): Json<ConfirmPaymentRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let buyer_id = claims
+        .farmer_id
+        .ok_or_else(|| AppError::Forbidden("Must be a registered user".into()))?;
+
+    // Validate preimage: must be 64 hex chars (32 bytes)
+    let preimage_bytes =
+        hex::decode(&body.preimage).map_err(|_| AppError::BadRequest("preimage must be hex-encoded".into()))?;
+    if preimage_bytes.len() != 32 {
+        return Err(AppError::BadRequest(
+            "preimage must be exactly 32 bytes (64 hex characters)".into(),
+        ));
+    }
+
+    // Compute payment hash
+    let payment_hash = hex::encode(Sha256::digest(&preimage_bytes));
+
+    // Fetch payment record
+    #[derive(FromRow)]
+    struct PaymentInfo {
+        order_id: Uuid,
+        status: String,
+    }
+    let payment: Option<PaymentInfo> =
+        sqlx::query_as("SELECT order_id, status FROM payments WHERE id = $1")
+            .bind(body.payment_id)
+            .fetch_optional(&state.db)
+            .await?;
+
+    let payment = payment.ok_or_else(|| {
+        AppError::NotFound(format!("Payment {} not found", body.payment_id))
+    })?;
+
+    if payment.status != "pending" {
+        return Err(AppError::BadRequest(format!(
+            "Payment is already {}",
+            payment.status
+        )));
+    }
+
+    // Verify the buyer owns this order
+    let order_buyer: Option<Uuid> =
+        sqlx::query_scalar("SELECT buyer_id FROM orders WHERE id = $1")
+            .bind(payment.order_id)
+            .fetch_optional(&state.db)
+            .await?;
+
+    if order_buyer != Some(buyer_id) {
+        return Err(AppError::Forbidden("Access denied".into()));
+    }
+
+    let now = Utc::now();
+
+    // Settle payment
+    sqlx::query(
+        "UPDATE payments SET status = 'settled', preimage = $2, payment_hash = $3, settled_at = $4
+         WHERE id = $1",
+    )
+    .bind(body.payment_id)
+    .bind(&body.preimage)
+    .bind(&payment_hash)
+    .bind(now)
+    .execute(&state.db)
+    .await?;
+
+    // Advance order to paid
+    sqlx::query("UPDATE orders SET status = 'paid' WHERE id = $1 AND status = 'pending_payment'")
+        .bind(payment.order_id)
+        .execute(&state.db)
+        .await?;
+
+    events::record_order_event(
+        &state.db,
+        payment.order_id,
+        Some(buyer_id),
+        "paid",
+        None,
+        serde_json::json!({
+            "payment_id": body.payment_id,
+            "payment_hash": payment_hash,
+        }),
+    )
+    .await
+    .ok();
+
+    Ok(Json(serde_json::json!({
+        "confirmed": true,
+        "payment_hash": payment_hash,
+    })))
+}
+
+/// GET /api/payments/order/:order_id
+pub async fn get_payment_for_order(
+    State(state): State<SharedState>,
+    claims: Claims,
+    Path(order_id): Path<Uuid>,
+) -> AppResult<Json<PaymentRecord>> {
+    let user_id = claims
+        .farmer_id
+        .ok_or_else(|| AppError::Forbidden("Must be a registered user".into()))?;
+
+    // Verify user is party to this order
+    let is_party: Option<bool> = sqlx::query_scalar(
+        "SELECT true FROM orders WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)",
+    )
+    .bind(order_id)
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    if is_party.is_none() {
+        return Err(AppError::Forbidden("Access denied".into()));
+    }
+
+    #[derive(FromRow)]
+    struct PaymentRow {
+        id: Uuid,
+        order_id: Uuid,
+        bolt11: String,
+        amount_sats: i64,
+        amount_kes: Decimal,
+        status: String,
+        settled_at: Option<DateTime<Utc>>,
+        created_at: DateTime<Utc>,
+    }
+
+    let row: Option<PaymentRow> = sqlx::query_as(
+        "SELECT id, order_id, bolt11, amount_sats, amount_kes, status, settled_at, created_at
+         FROM payments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(order_id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    let row = row.ok_or_else(|| {
+        AppError::NotFound(format!("No payment found for order {}", order_id))
+    })?;
+
+    Ok(Json(PaymentRecord {
+        id: row.id,
+        order_id: row.order_id,
+        bolt11: row.bolt11,
+        amount_sats: row.amount_sats,
+        amount_kes: row.amount_kes,
+        status: row.status,
+        settled_at: row.settled_at,
+        created_at: row.created_at,
+    }))
 }

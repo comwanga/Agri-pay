@@ -6,6 +6,7 @@ use axum::{
     extract::FromRequestParts,
     http::{request::Parts, HeaderMap},
 };
+use std::convert::Infallible;
 
 /// Axum extractor that reads the `Authorization: Bearer <token>` header,
 /// validates the JWT, and injects `Claims` into the request extensions.
@@ -23,6 +24,26 @@ impl FromRequestParts<SharedState> for Claims {
 
         let claims = validate_token(&state.config.jwt_secret, token)?;
         Ok(claims)
+    }
+}
+
+/// Optional claims extractor — succeeds with `None` when no valid token is present.
+/// Use for endpoints that work both authenticated and unauthenticated.
+#[allow(dead_code)]
+pub struct OptionalClaims(pub Option<Claims>);
+
+#[async_trait]
+impl FromRequestParts<SharedState> for OptionalClaims {
+    type Rejection = Infallible;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &SharedState,
+    ) -> Result<Self, Infallible> {
+        match Claims::from_request_parts(parts, state).await {
+            Ok(claims) => Ok(OptionalClaims(Some(claims))),
+            Err(_) => Ok(OptionalClaims(None)),
+        }
     }
 }
 

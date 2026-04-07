@@ -2,19 +2,26 @@ use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Record a payment event into the `payment_events` table.
-/// Errors are logged but non-fatal — callers may choose to ignore the result.
-pub async fn record_event(
+/// Record an order lifecycle event into the `order_events` table.
+/// Errors are logged but non-fatal.
+pub async fn record_order_event(
     pool: &PgPool,
-    payment_id: Uuid,
+    order_id: Uuid,
+    actor_id: Option<Uuid>,
     event_type: &str,
-    data: Value,
+    notes: Option<&str>,
+    metadata: Value,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("INSERT INTO payment_events (payment_id, event_type, data) VALUES ($1, $2, $3)")
-        .bind(payment_id)
-        .bind(event_type)
-        .bind(data)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "INSERT INTO order_events (order_id, actor_id, event_type, notes, metadata)
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(order_id)
+    .bind(actor_id)
+    .bind(event_type)
+    .bind(notes)
+    .bind(metadata)
+    .execute(pool)
+    .await?;
     Ok(())
 }

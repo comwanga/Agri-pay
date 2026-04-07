@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Wheat, ExternalLink } from 'lucide-react'
 import Layout from './components/Layout.tsx'
-import Dashboard from './components/Dashboard.tsx'
-import Farmers from './components/Farmers.tsx'
-import Payments from './components/Payments.tsx'
-import { getToken, nostrLogin } from './api/client.ts'
+import Marketplace from './components/Marketplace.tsx'
+import ProductDetail from './components/ProductDetail.tsx'
+import SellerDashboard from './components/SellerDashboard.tsx'
+import BuyerOrders from './components/BuyerOrders.tsx'
+import ProductForm from './components/ProductForm.tsx'
+import Profile from './components/Profile.tsx'
+import { getToken, nostrLogin, getProfile } from './api/client.ts'
+import { getTokenPayload } from './hooks/useCurrentFarmer.ts'
 
 function Screen({ children }: { children: React.ReactNode }) {
   return (
@@ -15,7 +19,7 @@ function Screen({ children }: { children: React.ReactNode }) {
           <Wheat className="w-7 h-7 text-brand-400" />
         </div>
         <h1 className="text-lg font-bold text-gray-100 mb-1">AgriPay</h1>
-        <p className="text-sm text-gray-400 mb-5">Lightning ↔ M-Pesa marketplace</p>
+        <p className="text-sm text-gray-400 mb-5">P2P marketplace · Pay in sats</p>
         {children}
       </div>
     </div>
@@ -27,12 +31,28 @@ export default function App() {
   const [pending, setPending] = useState(() => !getToken())
   const [authError, setAuthError] = useState<string | null>(null)
   const inFedi = typeof window !== 'undefined' && !!window.nostr
+  const navigate = useNavigate()
+
+  async function onLoginSuccess() {
+    setAuthed(true)
+    setPending(false)
+    // Redirect new users (no Lightning Address) to profile setup
+    try {
+      const payload = getTokenPayload()
+      if (payload?.farmer_id) {
+        const farmer = await getProfile(payload.farmer_id)
+        if (!farmer.ln_address) {
+          navigate('/profile?setup=1', { replace: true })
+        }
+      }
+    } catch { /* non-fatal */ }
+  }
 
   function attemptNostrAuth() {
     setAuthError(null)
     setPending(true)
     nostrLogin()
-      .then(() => { setAuthed(true); setPending(false) })
+      .then(onLoginSuccess)
       .catch((e: unknown) => {
         setPending(false)
         setAuthError(e instanceof Error ? e.message : 'Auth failed')
@@ -41,7 +61,6 @@ export default function App() {
 
   useEffect(() => {
     if (getToken()) { setPending(false); return }
-    // Small delay to allow Fedi to inject window.nostr before we check
     const t = setTimeout(() => {
       if (!window.nostr) { setPending(false); return }
       attemptNostrAuth()
@@ -58,8 +77,7 @@ export default function App() {
     )
   }
 
-  if (!authed && inFedi) {
-    // In Fedi but auth failed — show error + retry
+  if (!authed) {
     return (
       <Screen>
         {authError && (
@@ -67,27 +85,48 @@ export default function App() {
             {authError}
           </p>
         )}
-        <button onClick={attemptNostrAuth} className="btn-primary w-full justify-center">
-          Retry
-        </button>
-      </Screen>
-    )
-  }
 
-  if (!authed) {
-    // Not in Fedi — guide user
-    return (
-      <Screen>
-        <p className="text-xs text-gray-600 mb-6">Open this app inside Fedi to get started.</p>
-        <a
-          href="https://www.fedi.xyz"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-secondary text-xs inline-flex items-center gap-1.5"
-        >
-          <ExternalLink className="w-3.5 h-3.5" />
-          Get Fedi
-        </a>
+        {inFedi ? (
+          /* Inside Fedi mini-app or browser Nostr extension */
+          <button onClick={attemptNostrAuth} className="btn-primary w-full justify-center">
+            Connect with Nostr
+          </button>
+        ) : (
+          /* Regular browser — guide user to get a Nostr signer */
+          <>
+            <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+              AgriPay uses Nostr for sign-in.
+              Open this app inside <strong className="text-gray-300">Fedi</strong> for instant access,
+              or install a browser extension.
+            </p>
+            <button
+              onClick={attemptNostrAuth}
+              className="btn-primary w-full justify-center mb-3"
+            >
+              Connect with Nostr
+            </button>
+            <div className="flex gap-2 justify-center">
+              <a
+                href="https://www.fedi.xyz"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary text-xs inline-flex items-center gap-1.5"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Get Fedi
+              </a>
+              <a
+                href="https://getalby.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary text-xs inline-flex items-center gap-1.5"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Alby extension
+              </a>
+            </div>
+          </>
+        )}
       </Screen>
     )
   }
@@ -95,9 +134,13 @@ export default function App() {
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/farmers" element={<Farmers />} />
-        <Route path="/payments" element={<Payments />} />
+        <Route path="/" element={<Marketplace />} />
+        <Route path="/products/:id" element={<ProductDetail />} />
+        <Route path="/sell" element={<SellerDashboard />} />
+        <Route path="/sell/new" element={<ProductForm />} />
+        <Route path="/sell/edit/:id" element={<ProductForm />} />
+        <Route path="/orders" element={<BuyerOrders />} />
+        <Route path="/profile" element={<Profile />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

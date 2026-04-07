@@ -14,120 +14,158 @@ export interface LoginResponse {
   farmer_id?: string
 }
 
-// ─── Farmer ───────────────────────────────────────────────────────────────────
+// ─── User / Farmer ────────────────────────────────────────────────────────────
 
 export interface Farmer {
   id: string
   name: string
-  phone: string
-  cooperative: string
+  phone: string | null
+  nostr_pubkey: string | null
+  ln_address: string | null
+  location_name: string | null
   created_at: string
-}
-
-export interface CreateFarmerPayload {
-  name: string
-  phone: string
-  cooperative: string
-  pin?: string
 }
 
 export interface UpdateFarmerPayload {
   name?: string
-  cooperative?: string
   pin?: string
+  ln_address?: string
+  location_name?: string
+  location_lat?: number
+  location_lng?: number
 }
 
-// ─── Balance & Wallet ─────────────────────────────────────────────────────────
+// ─── Product ──────────────────────────────────────────────────────────────────
 
-export interface Balance {
-  farmer_id: string
-  available_sats: number
-  locked_sats: number
-  updated_at: string
-}
-
-export interface WithdrawRequest {
-  amount_kes: string // Decimal as string
-}
-
-export interface Withdrawal {
-  withdrawal_id: string
-  farmer_id: string
-  amount_sats: number
-  amount_kes: string
-  status: WithdrawalStatus
-}
-
-export type WithdrawalStatus =
-  | 'pending'
-  | 'processing'
-  | 'disbursing_mpesa'
-  | 'completed'
-  | 'failed'
-
-// ─── Payment ─────────────────────────────────────────────────────────────────
-
-export type PaymentStatus =
-  | 'created'
-  | 'invoice_created'
-  | 'bitcoin_received'
-  | 'credited_to_farmer'
-  | 'failed'
-
-export interface Payment {
+export interface ProductImage {
   id: string
-  farmer_id: string
-  btcpay_invoice_id: string | null
-  btcpay_payment_url: string | null
-  amount_sats: number
-  amount_kes: string
-  rate_used: string
-  status: PaymentStatus
-  failure_reason: string | null
-  crop_type: string | null
-  notes: string | null
+  product_id: string
+  url: string
+  is_primary: boolean
+  sort_order: number
+  created_at: string
+}
+
+export interface Product {
+  id: string
+  seller_id: string
+  seller_name: string
+  title: string
+  description: string
+  price_kes: string   // Decimal as string
+  unit: string
+  quantity_avail: string  // Decimal as string
+  category: string
+  status: ProductStatus
+  location_name: string
+  images: ProductImage[]
   created_at: string
   updated_at: string
 }
 
-export interface PaymentWithFarmer extends Payment {
-  farmer_name: string
-  farmer_phone: string
+export type ProductStatus = 'active' | 'paused' | 'sold_out' | 'deleted'
+
+export interface CreateProductPayload {
+  title: string
+  description?: string
+  price_kes: string
+  unit?: string
+  quantity_avail: string
+  category?: string
+  location_name?: string
+  location_lat?: number
+  location_lng?: number
 }
 
-export interface CreatePaymentPayload {
-  farmer_id: string
-  amount_kes: string // Decimal as string
-  crop_type?: string
-  notes?: string
+export interface UpdateProductPayload {
+  title?: string
+  description?: string
+  price_kes?: string
+  unit?: string
+  quantity_avail?: string
+  category?: string
+  status?: ProductStatus
+  location_name?: string
+  location_lat?: number
+  location_lng?: number
 }
 
-export interface CreatePaymentResponse {
-  payment: Payment
-  btcpay_payment_url: string | null
-}
+export const PRODUCT_UNITS = ['kg', 'piece', 'bag', 'litre', 'dozen', 'bunch', 'crate'] as const
+export type ProductUnit = (typeof PRODUCT_UNITS)[number]
 
-// ─── Orders ──────────────────────────────────────────────────────────────────
+export const PRODUCT_CATEGORIES = [
+  'Vegetables', 'Fruits', 'Grains', 'Livestock', 'Dairy',
+  'Poultry', 'Fish', 'Crafts', 'Other',
+] as const
+export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number]
 
-export type OrderStatus = 'open' | 'filled' | 'cancelled'
+// ─── Order ────────────────────────────────────────────────────────────────────
+
+export type OrderStatus =
+  | 'pending_payment'
+  | 'paid'
+  | 'processing'
+  | 'in_transit'
+  | 'delivered'
+  | 'confirmed'
+  | 'disputed'
+  | 'cancelled'
 
 export interface Order {
   id: string
-  farmer_id: string
-  farmer_name: string
-  farmer_phone: string
-  crop_type: string
-  quantity_kg: string
-  price_per_kg_sats: number
+  product_id: string
+  product_title: string
+  seller_id: string
+  seller_name: string
+  buyer_id: string
+  buyer_name: string
+  quantity: string          // Decimal as string
+  unit: string
+  unit_price_kes: string    // Decimal as string
+  total_kes: string         // Decimal as string
+  total_sats: number | null
+  buyer_location_name: string
+  distance_km: number | null
+  estimated_delivery_date: string | null  // "YYYY-MM-DD"
+  seller_delivery_date: string | null
+  delivery_notes: string | null
   status: OrderStatus
   created_at: string
   updated_at: string
 }
 
 export interface CreateOrderPayload {
-  crop_type: string
-  quantity_kg: string
-  price_per_kg_sats: number
+  product_id: string
+  quantity: string
+  buyer_lat?: number
+  buyer_lng?: number
+  buyer_location_name?: string
+}
+
+export interface UpdateOrderStatusPayload {
+  status: OrderStatus
+  delivery_date?: string   // "YYYY-MM-DD"
+  notes?: string
+}
+
+// ─── Payment ─────────────────────────────────────────────────────────────────
+
+export interface PaymentRecord {
+  id: string
+  order_id: string
+  bolt11: string
+  amount_sats: number
+  amount_kes: string
+  status: 'pending' | 'settled' | 'expired'
+  settled_at: string | null
+  created_at: string
+}
+
+export interface CreateInvoiceResponse {
+  payment_id: string
+  bolt11: string
+  amount_sats: number
+  amount_kes: string
 }
 
 // ─── Exchange Rate ────────────────────────────────────────────────────────────
@@ -138,8 +176,3 @@ export interface ExchangeRate {
   fetched_at: string
   live: boolean
 }
-
-// ─── Crop types ───────────────────────────────────────────────────────────────
-
-export const CROP_TYPES = ['Tea', 'Coffee', 'Flowers', 'Avocado', 'Other'] as const
-export type CropType = (typeof CROP_TYPES)[number]
