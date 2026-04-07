@@ -126,6 +126,64 @@ pub async fn nostr_login(
     }))
 }
 
+// ── Pubkey-only login (no signature — for users who know their npub) ─────────
+
+#[derive(Debug, Deserialize)]
+pub struct PubkeyLoginRequest {
+    /// 64-character lowercase hex Nostr public key (frontend decodes npub first)
+    pub pubkey: String,
+}
+
+pub async fn pubkey_login(
+    State(state): State<SharedState>,
+    Json(body): Json<PubkeyLoginRequest>,
+) -> AppResult<Json<super::LoginResponse>> {
+    let pubkey = body.pubkey.trim().to_lowercase();
+
+    if pubkey.len() != 64 || !pubkey.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(AppError::BadRequest(
+            "pubkey must be a 64-character hex string".into(),
+        ));
+    }
+
+    let farmer_id: uuid::Uuid = match sqlx::query_scalar(
+        "SELECT id FROM farmers WHERE nostr_pubkey = $1",
+    )
+    .bind(&pubkey)
+    .fetch_optional(&state.db)
+    .await?
+    {
+        Some(id) => id,
+        None => {
+            sqlx::query_scalar(
+                "INSERT INTO farmers (name, nostr_pubkey)
+                 VALUES ($1, $2)
+                 RETURNING id",
+            )
+            .bind(format!("Member {}", &pubkey[..8]))
+            .bind(&pubkey)
+            .fetch_one(&state.db)
+            .await?
+        }
+    };
+
+    let sub = farmer_id.to_string();
+    let token = super::jwt::generate_token(
+        &state.config.jwt_secret,
+        &sub,
+        super::Role::Farmer,
+        Some(farmer_id),
+        state.config.jwt_expiry_hours,
+    )?;
+
+    Ok(axum::Json(super::LoginResponse {
+        token,
+        role: "farmer".into(),
+        user_id: sub,
+        farmer_id: Some(farmer_id),
+    }))
+}
+
 fn verify_schnorr(pubkey_hex: &str, event_id_hex: &str, sig_hex: &str) -> AppResult<()> {
     use k256::schnorr::{Signature, VerifyingKey};
     use signature::Verifier;

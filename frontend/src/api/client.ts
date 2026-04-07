@@ -79,6 +79,28 @@ export function clearLocalSecretKey(): void {
   localStorage.removeItem(NSEC_KEY)
 }
 
+/** Log in with just a public key (npub decoded to hex by caller). No signature required. */
+export async function pubkeyAuth(pubkeyHex: string): Promise<LoginResponse> {
+  const res = await fetch(`${BASE}/auth/pubkey`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pubkey: pubkeyHex }),
+  })
+
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`
+    try {
+      const body = await res.json()
+      if (body?.error) message = body.error
+    } catch { /* ignore */ }
+    throw new Error(message)
+  }
+
+  const resp: LoginResponse = await res.json()
+  setToken(resp.token)
+  return resp
+}
+
 /** Sign a NIP-98 event locally (no browser extension required) and exchange for JWT. */
 export async function nostrLoginWithKey(secretKey: Uint8Array): Promise<LoginResponse> {
   const url = `${window.location.origin}/api/auth/nostr`

@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { getToken, nostrLogin, getProfile } from '../api/client.ts'
+import { getToken, nostrLogin, getProfile, getLocalSecretKey } from '../api/client.ts'
 import { getTokenPayload } from '../hooks/useCurrentFarmer.ts'
 import { useNavigate } from 'react-router-dom'
 import ConnectModal from '../components/ConnectModal.tsx'
@@ -45,11 +45,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch { /* non-fatal */ }
   }, [navigate])
 
-  // Silent background auth — works for Fedi (window.nostr) and returning
-  // users who have a stored local key (nostrLogin falls back to it automatically)
+  // Silent background auth — Fedi (window.nostr) or returning users with a stored key
   useEffect(() => {
     if (authed) return
     const t = setTimeout(() => {
+      // Only attempt if there's actually a signer available
+      if (!window.nostr && !getLocalSecretKey()) return
       setConnecting(true)
       nostrLogin()
         .then(onSuccess)

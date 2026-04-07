@@ -2,7 +2,7 @@ pub mod jwt;
 pub mod middleware;
 pub mod nostr;
 
-pub use nostr::nostr_login;
+pub use nostr::{nostr_login, pubkey_login};
 
 use crate::error::{AppError, AppResult};
 use crate::state::SharedState;
