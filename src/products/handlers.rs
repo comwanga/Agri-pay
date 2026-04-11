@@ -453,11 +453,7 @@ pub async fn create_product(
         )));
     }
 
-    let country_code = body
-        .country_code
-        .as_deref()
-        .unwrap_or("KE")
-        .to_uppercase();
+    let country_code = body.country_code.as_deref().unwrap_or("KE").to_uppercase();
     if country_code.len() != 2 {
         return Err(AppError::BadRequest(
             "country_code must be a 2-letter ISO 3166-1 alpha-2 code".into(),
@@ -475,9 +471,7 @@ pub async fn create_product(
         ));
     }
 
-    let ships_to = body
-        .ships_to
-        .unwrap_or_else(|| vec![country_code.clone()]);
+    let ships_to = body.ships_to.unwrap_or_else(|| vec![country_code.clone()]);
     let is_global = body.is_global.unwrap_or(false);
 
     let id: Uuid = sqlx::query_scalar(

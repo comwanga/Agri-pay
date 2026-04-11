@@ -126,25 +126,16 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
             "/lnurl/pay/:slug/callback",
             get(lnurl_server::lnurlp_callback),
         )
-        .route(
-            "/webhooks/btcpay",
-            post(lnurl_server::btcpay_webhook),
-        );
+        .route("/webhooks/btcpay", post(lnurl_server::btcpay_webhook));
 
     // ── Disputes ──────────────────────────────────────────────────────────────
     let dispute_routes = Router::new()
-        .route(
-            "/orders/:id/dispute",
-            post(dispute_handlers::open_dispute),
-        )
+        .route("/orders/:id/dispute", post(dispute_handlers::open_dispute))
         .route(
             "/orders/:id/dispute/evidence",
             get(dispute_handlers::get_evidence).post(dispute_handlers::add_evidence),
         )
-        .route(
-            "/admin/disputes",
-            get(dispute_handlers::list_open_disputes),
-        )
+        .route("/admin/disputes", get(dispute_handlers::list_open_disputes))
         .route(
             "/admin/disputes/:order_id/resolve",
             patch(dispute_handlers::resolve_dispute),

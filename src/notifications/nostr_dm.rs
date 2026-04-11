@@ -146,7 +146,13 @@ async fn build_and_publish(
     // Build the NIP-01 event
     let created_at = unix_now();
     let tags = vec![vec!["p".to_string(), recipient_pubkey_hex.to_string()]];
-    let id_hex = event_id(&sender_pubkey_hex, created_at, KIND_ENCRYPTED_DM, &tags, &encrypted);
+    let id_hex = event_id(
+        &sender_pubkey_hex,
+        created_at,
+        KIND_ENCRYPTED_DM,
+        &tags,
+        &encrypted,
+    );
 
     // Sign with Schnorr (BIP-340)
     let msg_bytes = hex::decode(&id_hex)?;
@@ -198,7 +204,11 @@ fn nip04_encrypt(key: &[u8; 32], plaintext: &[u8]) -> anyhow::Result<String> {
     }
 
     // NIP-04 wire format: "<base64 ciphertext>?iv=<base64 iv>"
-    Ok(format!("{}?iv={}", base64_std(&ciphertext), base64_std(&iv)))
+    Ok(format!(
+        "{}?iv={}",
+        base64_std(&ciphertext),
+        base64_std(&iv)
+    ))
 }
 
 // ── Event ID (SHA-256 of canonical JSON) ──────────────────────────────────────
@@ -258,8 +268,16 @@ fn base64_std(data: &[u8]) -> String {
         let n = (b0 << 16) | (b1 << 8) | b2;
         out.push(CHARS[(n >> 18) & 63] as char);
         out.push(CHARS[(n >> 12) & 63] as char);
-        out.push(if chunk.len() > 1 { CHARS[(n >> 6) & 63] as char } else { '=' });
-        out.push(if chunk.len() > 2 { CHARS[n & 63] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            CHARS[(n >> 6) & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            CHARS[n & 63] as char
+        } else {
+            '='
+        });
     }
     out
 }

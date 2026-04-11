@@ -128,9 +128,8 @@ pub async fn lnurlp_descriptor(
     .fetch_optional(&state.db)
     .await?;
 
-    let farmer = farmer.ok_or_else(|| {
-        AppError::NotFound(format!("No Lightning Address found for '{}'", slug))
-    })?;
+    let farmer = farmer
+        .ok_or_else(|| AppError::NotFound(format!("No Lightning Address found for '{}'", slug)))?;
 
     let domain = state
         .config
@@ -196,9 +195,8 @@ pub async fn lnurlp_callback(
             .fetch_optional(&state.db)
             .await?;
 
-    let farmer = farmer.ok_or_else(|| {
-        AppError::NotFound(format!("Farmer '{}' not found", slug))
-    })?;
+    let farmer =
+        farmer.ok_or_else(|| AppError::NotFound(format!("Farmer '{}' not found", slug)))?;
 
     // Create invoice via BTCPay Server Lightning API
     let amount_sats = q.amount / 1000; // msats → sats
@@ -253,9 +251,7 @@ pub async fn lnurlp_callback(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("BTCPay response parse error: {}", e)))?;
 
     let bolt11 = invoice.bolt11.ok_or_else(|| {
-        AppError::Internal(anyhow::anyhow!(
-            "BTCPay did not return a BOLT11 invoice"
-        ))
+        AppError::Internal(anyhow::anyhow!("BTCPay did not return a BOLT11 invoice"))
     })?;
 
     tracing::info!(

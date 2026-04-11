@@ -104,8 +104,7 @@ pub async fn open_dispute(
             .fetch_optional(&state.db)
             .await?;
 
-    let meta =
-        meta.ok_or_else(|| AppError::NotFound(format!("Order {} not found", order_id)))?;
+    let meta = meta.ok_or_else(|| AppError::NotFound(format!("Order {} not found", order_id)))?;
 
     // Only the buyer can open a dispute, and only after seller marks delivered
     if meta.buyer_id != user_id {
@@ -269,9 +268,7 @@ pub async fn list_open_disputes(
     claims: Claims,
 ) -> AppResult<Json<Vec<OpenDispute>>> {
     if claims.role != Role::Admin {
-        return Err(AppError::Forbidden(
-            "Admin access required".into(),
-        ));
+        return Err(AppError::Forbidden("Admin access required".into()));
     }
 
     #[derive(FromRow)]
@@ -350,11 +347,10 @@ pub async fn resolve_dispute(
     }
 
     // Verify the order is still disputed
-    let status: Option<String> =
-        sqlx::query_scalar("SELECT status FROM orders WHERE id = $1")
-            .bind(order_id)
-            .fetch_optional(&state.db)
-            .await?;
+    let status: Option<String> = sqlx::query_scalar("SELECT status FROM orders WHERE id = $1")
+        .bind(order_id)
+        .fetch_optional(&state.db)
+        .await?;
 
     match status.as_deref() {
         Some("disputed") => {}
@@ -369,9 +365,9 @@ pub async fn resolve_dispute(
 
     // Determine final order status based on resolution
     let final_status = match body.resolution.as_str() {
-        "refund_buyer" => "cancelled",  // seller ships nothing; buyer notified separately
+        "refund_buyer" => "cancelled", // seller ships nothing; buyer notified separately
         "release_seller" => "confirmed", // seller fulfilled; funds already in seller wallet
-        "split" => "confirmed",          // partial; admin handles externally
+        "split" => "confirmed",        // partial; admin handles externally
         _ => unreachable!(),
     };
 

@@ -61,7 +61,6 @@ async fn main() -> Result<()> {
     tokio::fs::create_dir_all(&config.upload_dir).await?;
     tracing::info!("Upload directory: {}", config.upload_dir);
 
-
     // ── Shared HTTP client ────────────────────────────────────────────────────
     let http = Client::builder()
         .use_rustls_tls()

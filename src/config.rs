@@ -100,12 +100,18 @@ impl Config {
             allowed_origins,
             log_format: std::env::var("LOG_FORMAT").unwrap_or_else(|_| "text".into()),
             btcpay_url: std::env::var("BTCPAY_URL").ok().filter(|s| !s.is_empty()),
-            btcpay_api_key: std::env::var("BTCPAY_API_KEY").ok().filter(|s| !s.is_empty()),
-            btcpay_store_id: std::env::var("BTCPAY_STORE_ID").ok().filter(|s| !s.is_empty()),
+            btcpay_api_key: std::env::var("BTCPAY_API_KEY")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            btcpay_store_id: std::env::var("BTCPAY_STORE_ID")
+                .ok()
+                .filter(|s| !s.is_empty()),
             btcpay_webhook_secret: std::env::var("BTCPAY_WEBHOOK_SECRET")
                 .ok()
                 .filter(|s| !s.is_empty()),
-            nostr_relay_url: std::env::var("NOSTR_RELAY_URL").ok().filter(|s| !s.is_empty()),
+            nostr_relay_url: std::env::var("NOSTR_RELAY_URL")
+                .ok()
+                .filter(|s| !s.is_empty()),
             nostr_privkey_hex: std::env::var("NOSTR_PRIVKEY_HEX")
                 .ok()
                 .filter(|s| !s.is_empty()),

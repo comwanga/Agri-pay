@@ -78,11 +78,7 @@ pub async fn get_rate(
     State(state): State<SharedState>,
     Query(q): Query<RateQuery>,
 ) -> AppResult<Json<RateResponse>> {
-    let local_currency = q
-        .currency
-        .as_deref()
-        .unwrap_or("USD")
-        .to_uppercase();
+    let local_currency = q.currency.as_deref().unwrap_or("USD").to_uppercase();
 
     // Validate requested currency
     if !SUPPORTED_CURRENCIES
@@ -112,11 +108,9 @@ pub async fn get_rate(
     .fetch_optional(&state.db)
     .await?;
 
-    let cache_age = cached_usd.as_ref().map(|r| {
-        Utc::now()
-            .signed_duration_since(r.fetched_at)
-            .num_seconds()
-    });
+    let cache_age = cached_usd
+        .as_ref()
+        .map(|r| Utc::now().signed_duration_since(r.fetched_at).num_seconds());
 
     let (rates_map, fetched_at, live) = if cache_age.map(|a| a < cache_ttl).unwrap_or(false) {
         // Cache is fresh — load all currencies from the same snapshot
@@ -131,8 +125,10 @@ pub async fn get_rate(
         .await
         .unwrap_or_default();
 
-        let map: HashMap<String, Decimal> =
-            rows.iter().map(|r| (r.currency_code.clone(), r.btc_kes)).collect();
+        let map: HashMap<String, Decimal> = rows
+            .iter()
+            .map(|r| (r.currency_code.clone(), r.btc_kes))
+            .collect();
         (map, snapshot_at, false)
     } else {
         // Fetch all rates from CoinGecko in one call
@@ -188,9 +184,15 @@ pub async fn get_rate(
                         e
                     )));
                 }
-                let fetched_at = rows.iter().map(|r| r.fetched_at).max().unwrap_or(Utc::now());
-                let map: HashMap<String, Decimal> =
-                    rows.into_iter().map(|r| (r.currency_code, r.btc_kes)).collect();
+                let fetched_at = rows
+                    .iter()
+                    .map(|r| r.fetched_at)
+                    .max()
+                    .unwrap_or(Utc::now());
+                let map: HashMap<String, Decimal> = rows
+                    .into_iter()
+                    .map(|r| (r.currency_code, r.btc_kes))
+                    .collect();
                 (map, fetched_at, false)
             }
         }
@@ -199,20 +201,14 @@ pub async fn get_rate(
     // ── Build response ────────────────────────────────────────────────────────
     let sats_divisor = Decimal::new(100_000_000, 0);
 
-    let btc_usd = rates_map
-        .get("USD")
-        .copied()
-        .unwrap_or(Decimal::ZERO);
+    let btc_usd = rates_map.get("USD").copied().unwrap_or(Decimal::ZERO);
     let sats_usd = if btc_usd > Decimal::ZERO {
         (btc_usd / sats_divisor).round_dp(8)
     } else {
         Decimal::ZERO
     };
 
-    let btc_local = rates_map
-        .get(&local_currency)
-        .copied()
-        .unwrap_or(btc_usd);
+    let btc_local = rates_map.get(&local_currency).copied().unwrap_or(btc_usd);
     let sats_local = if btc_local > Decimal::ZERO {
         (btc_local / sats_divisor).round_dp(8)
     } else {
