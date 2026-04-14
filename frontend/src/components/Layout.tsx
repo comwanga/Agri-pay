@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   ShoppingBag, Package, Wheat, TrendingUp, AlertCircle,
   LogOut, Plus, UserCircle, LogIn, Menu, X, Shield,
+  Currency,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { getRate, clearToken } from '../api/client.ts'
@@ -16,7 +17,7 @@ import type { ReactNode } from 'react'
 function RateDisplay() {
   const { data: rate, isError } = useQuery({
     queryKey: ['rate'],
-    queryFn: getRate,
+    queryFn: getRate, //
     refetchInterval: 60_000,
     staleTime: 30_000,
   })
@@ -341,4 +342,4 @@ export default function Layout({ children }: { children: ReactNode }) {
       <BottomNav />
     </div>
   )
-}
+} 
