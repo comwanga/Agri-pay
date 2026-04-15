@@ -124,8 +124,11 @@ impl StkCallbackMetadata {
     }
 
     pub fn phone_number(&self) -> Option<String> {
-        self.get("PhoneNumber")
-            .and_then(|v| v.as_str().map(str::to_owned).or_else(|| v.as_u64().map(|n| n.to_string())))
+        self.get("PhoneNumber").and_then(|v| {
+            v.as_str()
+                .map(str::to_owned)
+                .or_else(|| v.as_u64().map(|n| n.to_string()))
+        })
     }
 
     #[allow(dead_code)]
@@ -192,14 +195,17 @@ impl MpesaClient {
             .header("Authorization", format!("Basic {}", credentials))
             .send()
             .await
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("Daraja token request failed: {}", e)))?;
+            .map_err(|e| {
+                AppError::Internal(anyhow::anyhow!("Daraja token request failed: {}", e))
+            })?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             return Err(AppError::Internal(anyhow::anyhow!(
                 "Daraja token endpoint returned {}: {}",
-                status, body
+                status,
+                body
             )));
         }
 
@@ -272,10 +278,7 @@ impl MpesaClient {
             "TransactionDesc": desc,
         });
 
-        let url = format!(
-            "{}/mpesa/stkpush/v1/processrequest",
-            self.env.base_url()
-        );
+        let url = format!("{}/mpesa/stkpush/v1/processrequest", self.env.base_url());
 
         let resp = self
             .http
@@ -301,7 +304,8 @@ impl MpesaClient {
                 .unwrap_or(body_text);
             return Err(AppError::Internal(anyhow::anyhow!(
                 "Daraja STK Push returned {}: {}",
-                status, msg
+                status,
+                msg
             )));
         }
 
@@ -312,7 +316,8 @@ impl MpesaClient {
         if stk.response_code != "0" {
             return Err(AppError::Internal(anyhow::anyhow!(
                 "Daraja STK Push error (code {}): {}",
-                stk.response_code, stk.response_description
+                stk.response_code,
+                stk.response_description
             )));
         }
 

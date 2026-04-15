@@ -256,91 +256,90 @@ pub async fn create_invoice(
         order.product_title,
     );
 
-    let (bolt11, btcpay_invoice_id) =
-        if let Ok((btcpay_url, btcpay_key, btcpay_store)) =
-            crate::lnurl::server::require_btcpay(&state)
-        {
-            // ── Path A: BTCPay ─────────────────────────────────────────────────
-            let url = format!(
-                "{}/api/v1/stores/{}/lightning/invoices",
-                btcpay_url, btcpay_store
-            );
-            let btcpay_body = serde_json::json!({
-                "amount": amount_sats.to_string(),
-                "description": description,
-                "expiry": INVOICE_EXPIRY_SECS as u64,
-            });
+    let (bolt11, btcpay_invoice_id) = if let Ok((btcpay_url, btcpay_key, btcpay_store)) =
+        crate::lnurl::server::require_btcpay(&state)
+    {
+        // ── Path A: BTCPay ─────────────────────────────────────────────────
+        let url = format!(
+            "{}/api/v1/stores/{}/lightning/invoices",
+            btcpay_url, btcpay_store
+        );
+        let btcpay_body = serde_json::json!({
+            "amount": amount_sats.to_string(),
+            "description": description,
+            "expiry": INVOICE_EXPIRY_SECS as u64,
+        });
 
-            let resp = state
-                .http
-                .post(&url)
-                .header("Authorization", format!("token {}", btcpay_key))
-                .json(&btcpay_body)
-                .send()
-                .await
-                .map_err(|e| {
-                    AppError::Internal(anyhow::anyhow!("BTCPay invoice request failed: {}", e))
-                })?;
-
-            if !resp.status().is_success() {
-                let status = resp.status();
-                let text = resp.text().await.unwrap_or_default();
-                return Err(AppError::Internal(anyhow::anyhow!(
-                    "BTCPay returned {}: {}",
-                    status,
-                    text
-                )));
-            }
-
-            #[derive(serde::Deserialize)]
-            struct BtcPayLnInvoice {
-                #[serde(rename = "BOLT11")]
-                bolt11: Option<String>,
-                id: String,
-            }
-            let inv: BtcPayLnInvoice = resp.json().await.map_err(|e| {
-                AppError::Internal(anyhow::anyhow!("BTCPay response parse error: {}", e))
-            })?;
-            let b11 = inv.bolt11.ok_or_else(|| {
-                AppError::Internal(anyhow::anyhow!("BTCPay did not return a BOLT11"))
+        let resp = state
+            .http
+            .post(&url)
+            .header("Authorization", format!("token {}", btcpay_key))
+            .json(&btcpay_body)
+            .send()
+            .await
+            .map_err(|e| {
+                AppError::Internal(anyhow::anyhow!("BTCPay invoice request failed: {}", e))
             })?;
 
-            tracing::info!(
-                order_id = %body.order_id,
-                btcpay_invoice_id = %inv.id,
-                amount_sats = %amount_sats,
-                "Platform Lightning invoice created via BTCPay"
-            );
-            (b11, Some(inv.id))
-        } else {
-            // ── Path B: seller LNURL fallback ─────────────────────────────────
-            let ln_address: Option<String> =
-                sqlx::query_scalar("SELECT ln_address FROM farmers WHERE id = $1")
-                    .bind(order.seller_id)
-                    .fetch_optional(&state.db)
-                    .await?
-                    .flatten();
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(AppError::Internal(anyhow::anyhow!(
+                "BTCPay returned {}: {}",
+                status,
+                text
+            )));
+        }
 
-            let ln_address = ln_address.ok_or_else(|| {
-                AppError::BadRequest(
-                    "No Lightning node is configured for this platform and the seller has not set \
+        #[derive(serde::Deserialize)]
+        struct BtcPayLnInvoice {
+            #[serde(rename = "BOLT11")]
+            bolt11: Option<String>,
+            id: String,
+        }
+        let inv: BtcPayLnInvoice = resp.json().await.map_err(|e| {
+            AppError::Internal(anyhow::anyhow!("BTCPay response parse error: {}", e))
+        })?;
+        let b11 = inv
+            .bolt11
+            .ok_or_else(|| AppError::Internal(anyhow::anyhow!("BTCPay did not return a BOLT11")))?;
+
+        tracing::info!(
+            order_id = %body.order_id,
+            btcpay_invoice_id = %inv.id,
+            amount_sats = %amount_sats,
+            "Platform Lightning invoice created via BTCPay"
+        );
+        (b11, Some(inv.id))
+    } else {
+        // ── Path B: seller LNURL fallback ─────────────────────────────────
+        let ln_address: Option<String> =
+            sqlx::query_scalar("SELECT ln_address FROM farmers WHERE id = $1")
+                .bind(order.seller_id)
+                .fetch_optional(&state.db)
+                .await?
+                .flatten();
+
+        let ln_address = ln_address.ok_or_else(|| {
+            AppError::BadRequest(
+                "No Lightning node is configured for this platform and the seller has not set \
                      a Lightning Address. Contact the seller or administrator."
-                        .into(),
-                )
-            })?;
+                    .into(),
+            )
+        })?;
 
-            let invoice = state
-                .lnurl
-                .request_invoice(&ln_address, amount_sats * 1000)
-                .await?;
+        let invoice = state
+            .lnurl
+            .request_invoice(&ln_address, amount_sats * 1000)
+            .await?;
 
-            tracing::info!(
-                order_id = %body.order_id,
-                amount_sats = %amount_sats,
-                "Lightning invoice created via seller LNURL"
-            );
-            (invoice.bolt11, None)
-        };
+        tracing::info!(
+            order_id = %body.order_id,
+            amount_sats = %amount_sats,
+            "Lightning invoice created via seller LNURL"
+        );
+        (invoice.bolt11, None)
+    };
 
     // ── Persist payment record ────────────────────────────────────────────────
     let payment_id: Uuid = sqlx::query_scalar(

@@ -92,9 +92,8 @@ impl LnurlClient {
         let bytes = Vec::<u8>::from_base32(&data)
             .map_err(|e| AppError::BadRequest(format!("LNURL base32 decode error: {}", e)))?;
 
-        String::from_utf8(bytes).map_err(|_| {
-            AppError::BadRequest("Decoded LNURL is not valid UTF-8".into())
-        })
+        String::from_utf8(bytes)
+            .map_err(|_| AppError::BadRequest("Decoded LNURL is not valid UTF-8".into()))
     }
 
     /// Normalise any Lightning payment identifier into a fetchable HTTPS URL.
@@ -108,9 +107,7 @@ impl LnurlClient {
         let trimmed = input.trim();
 
         // Strip the optional `lightning:` URI scheme (LUD-17)
-        let s = trimmed
-            .strip_prefix("lightning:")
-            .unwrap_or(trimmed);
+        let s = trimmed.strip_prefix("lightning:").unwrap_or(trimmed);
 
         // bech32 LNURL string (case-insensitive `lnurl1` prefix)
         if s.to_ascii_lowercase().starts_with("lnurl1") {
@@ -132,10 +129,7 @@ impl LnurlClient {
                     "Invalid Lightning Address: both user and domain are required".into(),
                 ));
             }
-            return Ok(format!(
-                "https://{}/.well-known/lnurlp/{}",
-                domain, user
-            ));
+            return Ok(format!("https://{}/.well-known/lnurlp/{}", domain, user));
         }
 
         // Raw HTTPS URL (direct LNURL endpoint — useful in dev/testing)

@@ -185,8 +185,7 @@ impl Config {
             mpesa_callback_url: std::env::var("MPESA_CALLBACK_URL")
                 .ok()
                 .filter(|s| !s.is_empty()),
-            mpesa_env: std::env::var("MPESA_ENV")
-                .unwrap_or_else(|_| "sandbox".into()),
+            mpesa_env: std::env::var("MPESA_ENV").unwrap_or_else(|_| "sandbox".into()),
         })
     }
 }

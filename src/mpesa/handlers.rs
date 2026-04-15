@@ -119,8 +119,7 @@ pub async fn initiate_stk_push(
     }
 
     // Normalise phone to E.164 (254XXXXXXXXX)
-    let phone = normalize_phone(&body.phone)
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let phone = normalize_phone(&body.phone).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     // Daraja only accepts integer amounts — round up to nearest shilling
     let amount_kes_ceil = order.total_kes.ceil();
@@ -130,15 +129,16 @@ pub async fn initiate_stk_push(
         .map_err(|_| AppError::Internal(anyhow::anyhow!("KES amount overflow")))?;
 
     if amount_u64 < 1 {
-        return Err(AppError::BadRequest("Order amount is less than KES 1".into()));
+        return Err(AppError::BadRequest(
+            "Order amount is less than KES 1".into(),
+        ));
     }
 
     // Build account reference from order ID (first 8 chars) + seller name
-    let seller_name: Option<String> =
-        sqlx::query_scalar("SELECT name FROM farmers WHERE id = $1")
-            .bind(order.seller_id)
-            .fetch_optional(&state.db)
-            .await?;
+    let seller_name: Option<String> = sqlx::query_scalar("SELECT name FROM farmers WHERE id = $1")
+        .bind(order.seller_id)
+        .fetch_optional(&state.db)
+        .await?;
     let account_ref = format!(
         "{} {}",
         &body.order_id.to_string()[..8].to_uppercase(),
