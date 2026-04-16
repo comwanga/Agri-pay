@@ -327,8 +327,9 @@ pub async fn create_invoice(
 
         let ln_address = ln_address.ok_or_else(|| {
             AppError::BadRequest(
-                "No Lightning node is configured for this platform and the seller has not set \
-                     a Lightning Address. Contact the seller or administrator."
+                "Lightning payment is unavailable: no payment node is configured for this \
+                 platform and the seller has not set a Lightning Address. \
+                 Please choose M-Pesa or contact the seller."
                     .into(),
             )
         })?;
@@ -336,10 +337,28 @@ pub async fn create_invoice(
         let invoice = state
             .lnurl
             .request_invoice(&ln_address, amount_sats * 1000)
-            .await?;
+            .await
+            .map_err(|e| {
+                // Log the specific address and seller so admins can identify and fix
+                // broken Lightning Addresses without digging through the DB.
+                tracing::error!(
+                    seller_id   = %order.seller_id,
+                    ln_address  = %ln_address,
+                    order_id    = %body.order_id,
+                    "Seller LNURL invoice failed: {}", e,
+                );
+                AppError::Unavailable(
+                    "Lightning payment is currently unavailable for this seller. \
+                     Please select M-Pesa as your payment method, or ask the seller \
+                     to verify their Lightning Address in their profile settings."
+                        .into(),
+                )
+            })?;
 
         tracing::info!(
-            order_id = %body.order_id,
+            order_id    = %body.order_id,
+            seller_id   = %order.seller_id,
+            ln_address  = %ln_address,
             amount_sats = %amount_sats,
             "Lightning invoice created via seller LNURL"
         );

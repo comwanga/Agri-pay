@@ -35,6 +35,11 @@ pub enum AppError {
 
     /// Returned when an incoming webhook fails signature verification.
     /// Maps to 401 so the sender knows the request was rejected, not broken.
+    /// Returned when an upstream dependency is temporarily unavailable.
+    /// Maps to 503 so the client knows to retry or try another method.
+    #[error("Service unavailable: {0}")]
+    Unavailable(String),
+
     #[error("Webhook error: {0}")]
     Webhook(String),
 
@@ -73,6 +78,10 @@ impl IntoResponse for AppError {
             AppError::Lnurl(msg) => {
                 tracing::error!("LNURL error: {}", msg);
                 (StatusCode::BAD_GATEWAY, msg.clone())
+            }
+            AppError::Unavailable(msg) => {
+                tracing::warn!("Service unavailable: {}", msg);
+                (StatusCode::SERVICE_UNAVAILABLE, msg.clone())
             }
             AppError::Webhook(msg) => {
                 // Log at warn, not error — this is a rejected request, not a server fault.

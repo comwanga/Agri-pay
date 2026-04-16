@@ -160,7 +160,15 @@ export default function ProductDetail() {
       setInvoiceSecsLeft(60)
       setBuyStep('invoice')
     },
-    onError: (e: Error) => setPayError(e.message),
+    onError: (e: Error) => {
+      setPayError(e.message)
+      // When the seller's Lightning Address is broken/unconfigured the server
+      // returns a 503 with "unavailable" in the message.  Auto-switch to M-Pesa
+      // so the buyer has a clear next step instead of a dead button.
+      if (e.message.toLowerCase().includes('unavailable')) {
+        setPayMethod('mpesa')
+      }
+    },
   })
 
   const refreshInvoice = useCallback(() => {
@@ -567,9 +575,32 @@ export default function ProductDetail() {
               )}
 
               {payError && (
-                <p className="text-xs text-red-400 bg-red-900/20 border border-red-700/30 rounded-lg px-3 py-2">
-                  {payError}
-                </p>
+                <div className={clsx(
+                  'rounded-lg px-3 py-2.5 space-y-1.5 border',
+                  payError.toLowerCase().includes('unavailable')
+                    ? 'bg-yellow-900/20 border-yellow-700/30'
+                    : 'bg-red-900/20 border-red-700/30',
+                )}>
+                  <p className={clsx(
+                    'text-xs font-medium',
+                    payError.toLowerCase().includes('unavailable') ? 'text-yellow-300' : 'text-red-400',
+                  )}>
+                    {payError.toLowerCase().includes('unavailable')
+                      ? 'Lightning unavailable for this seller'
+                      : 'Payment error'}
+                  </p>
+                  {!payError.toLowerCase().includes('unavailable') && (
+                    <p className="text-xs text-red-400/80">{payError}</p>
+                  )}
+                  {payError.toLowerCase().includes('unavailable') && payMethod !== 'mpesa' && (
+                    <button
+                      onClick={() => { setPayMethod('mpesa'); setPayError(null) }}
+                      className="text-xs font-semibold text-yellow-300 underline underline-offset-2"
+                    >
+                      Switch to M-Pesa →
+                    </button>
+                  )}
+                </div>
               )}
 
               <div className="flex gap-2">
