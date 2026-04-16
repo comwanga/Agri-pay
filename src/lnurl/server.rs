@@ -198,8 +198,10 @@ pub async fn lnurlp_callback(
     let farmer =
         farmer.ok_or_else(|| AppError::NotFound(format!("Farmer '{}' not found", slug)))?;
 
-    // Create invoice via BTCPay Server Lightning API
-    let amount_sats = q.amount / 1000; // msats → sats
+    // Create invoice via BTCPay Server Lightning API.
+    // BTCPay's lightning/invoices endpoint takes amount in millisatoshis,
+    // so we pass q.amount directly (it is already in msats from the LNURL callback).
+    let amount_sats = q.amount / 1000; // used only for logging
     let btcpay_invoice_url = format!(
         "{}/api/v1/stores/{}/lightning/invoices",
         btcpay_url, btcpay_store
@@ -209,7 +211,7 @@ pub async fn lnurlp_callback(
     let description = q.comment.as_deref().unwrap_or(&default_desc);
 
     let btcpay_body = serde_json::json!({
-        "amount": amount_sats.to_string(),
+        "amount": q.amount.to_string(),   // BTCPay expects millisatoshis
         "description": description,
         "expiry": 900,  // 15 min — LNURL wallets manage their own expiry
     });

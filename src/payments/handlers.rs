@@ -160,7 +160,8 @@ pub async fn create_invoice(
         .farmer_id
         .ok_or_else(|| AppError::Forbidden("Must be a registered user".into()))?;
 
-    // Fetch order to verify buyer and get totals
+    // Fetch order to verify buyer and get totals.
+    // product_title is NOT a column on orders — it lives in the products table.
     #[derive(FromRow)]
     struct OrderInfo {
         buyer_id: Uuid,
@@ -170,7 +171,10 @@ pub async fn create_invoice(
         product_title: String,
     }
     let order: Option<OrderInfo> = sqlx::query_as(
-        "SELECT buyer_id, seller_id, total_kes, status, product_title FROM orders WHERE id = $1",
+        "SELECT o.buyer_id, o.seller_id, o.total_kes, o.status, p.title AS product_title
+         FROM orders o
+         JOIN products p ON p.id = o.product_id
+         WHERE o.id = $1",
     )
     .bind(body.order_id)
     .fetch_optional(&state.db)
@@ -264,8 +268,9 @@ pub async fn create_invoice(
             "{}/api/v1/stores/{}/lightning/invoices",
             btcpay_url, btcpay_store
         );
+        // BTCPay Server Lightning invoice API takes amount in millisatoshis.
         let btcpay_body = serde_json::json!({
-            "amount": amount_sats.to_string(),
+            "amount": (amount_sats * 1000).to_string(),
             "description": description,
             "expiry": INVOICE_EXPIRY_SECS as u64,
         });
@@ -380,12 +385,14 @@ pub async fn create_invoice(
         );
     }
 
-    // Stamp the sats amount on the order for display
-    sqlx::query("UPDATE orders SET total_sats = $2 WHERE id = $1")
-        .bind(body.order_id)
-        .bind(amount_sats)
-        .execute(&state.db)
-        .await?;
+    // Stamp the sats amount and payment method on the order for display/history.
+    sqlx::query(
+        "UPDATE orders SET total_sats = $2, payment_method = 'lightning' WHERE id = $1",
+    )
+    .bind(body.order_id)
+    .bind(amount_sats)
+    .execute(&state.db)
+    .await?;
 
     Ok((
         StatusCode::CREATED,
