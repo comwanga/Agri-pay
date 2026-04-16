@@ -1,28 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, Plus, Trash2, Bitcoin, Check } from 'lucide-react'
-
-// ── Supported currencies ──────────────────────────────────────────────────────
-
-const SUPPORTED = [
-  { code: 'EUR', name: 'Euro',                   flag: '🇪🇺' },
-  { code: 'GBP', name: 'British Pound',           flag: '🇬🇧' },
-  { code: 'KES', name: 'Kenyan Shilling',         flag: '🇰🇪' },
-  { code: 'NGN', name: 'Nigerian Naira',           flag: '🇳🇬' },
-  { code: 'UGX', name: 'Ugandan Shilling',        flag: '🇺🇬' },
-  { code: 'TZS', name: 'Tanzanian Shilling',      flag: '🇹🇿' },
-  { code: 'ZAR', name: 'South African Rand',      flag: '🇿🇦' },
-  { code: 'GHS', name: 'Ghanaian Cedi',           flag: '🇬🇭' },
-  { code: 'ETB', name: 'Ethiopian Birr',          flag: '🇪🇹' },
-  { code: 'RWF', name: 'Rwandan Franc',           flag: '🇷🇼' },
-  { code: 'JPY', name: 'Japanese Yen',            flag: '🇯🇵' },
-  { code: 'CNY', name: 'Chinese Yuan',            flag: '🇨🇳' },
-  { code: 'INR', name: 'Indian Rupee',            flag: '🇮🇳' },
-  { code: 'AED', name: 'UAE Dirham',              flag: '🇦🇪' },
-  { code: 'CAD', name: 'Canadian Dollar',         flag: '🇨🇦' },
-  { code: 'AUD', name: 'Australian Dollar',       flag: '🇦🇺' },
-] as const
-
-type CurrencyCode = typeof SUPPORTED[number]['code']
+import { RefreshCw, Plus, Trash2, Bitcoin, Check, Search, X } from 'lucide-react'
+import { WORLD_CURRENCIES, getCurrencyMeta } from '../data/currencies.ts'
 
 const LS_KEY = 'sokopay_converter_currencies'
 
@@ -68,6 +46,7 @@ export default function CurrencyConverter({ onClose }: Props) {
   const [amounts, setAmounts]         = useState<Record<string, string>>({})
   const [focused, setFocused]         = useState<string | null>(null)
   const [showPicker, setShowPicker]   = useState(false)
+  const [pickerSearch, setPickerSearch] = useState('')
 
   // ── Persist user currency list ──────────────────────────────────────────────
 
@@ -151,6 +130,7 @@ export default function CurrencyConverter({ onClose }: Props) {
   function addCurrency(code: string) {
     setUserCurrencies(prev => [...prev, code])
     setShowPicker(false)
+    setPickerSearch('')
   }
 
   function removeCurrency(code: string) {
@@ -162,11 +142,14 @@ export default function CurrencyConverter({ onClose }: Props) {
     })
   }
 
-  const available = SUPPORTED.filter(c => !userCurrencies.includes(c.code))
+  const available = WORLD_CURRENCIES.filter(c => !userCurrencies.includes(c.code) && c.code !== 'USD')
 
-  function getMeta(code: string) {
-    return SUPPORTED.find(c => c.code === code)
-  }
+  const filteredAvailable = pickerSearch.trim()
+    ? available.filter(c =>
+        c.name.toLowerCase().includes(pickerSearch.toLowerCase()) ||
+        c.code.toLowerCase().includes(pickerSearch.toLowerCase()),
+      )
+    : available
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -250,7 +233,7 @@ export default function CurrencyConverter({ onClose }: Props) {
 
               {/* User-added currency rows */}
               {userCurrencies.map(code => {
-                const meta = getMeta(code as CurrencyCode)
+                const meta = getCurrencyMeta(code)
                 return (
                   <CurrencyRow
                     key={code}
@@ -271,21 +254,42 @@ export default function CurrencyConverter({ onClose }: Props) {
               {available.length > 0 && (
                 showPicker ? (
                   <div className="bg-gray-900 rounded-2xl overflow-hidden border border-gray-700/60">
-                    <div className="max-h-52 overflow-y-auto">
-                      {available.map(cur => (
-                        <button
-                          key={cur.code}
-                          onClick={() => addCurrency(cur.code)}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-800 transition-colors"
-                        >
-                          <span className="text-xl">{cur.flag}</span>
-                          <span className="text-sm text-gray-200">{cur.name}</span>
-                          <span className="ml-auto text-xs font-semibold text-gray-500">{cur.code}</span>
+                    {/* Search */}
+                    <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-700/60">
+                      <Search className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                      <input
+                        autoFocus
+                        type="text"
+                        placeholder="Search currency or country…"
+                        value={pickerSearch}
+                        onChange={e => setPickerSearch(e.target.value)}
+                        className="flex-1 bg-transparent text-sm text-gray-200 placeholder-gray-600 outline-none"
+                      />
+                      {pickerSearch && (
+                        <button onClick={() => setPickerSearch('')} className="text-gray-600 hover:text-gray-400">
+                          <X className="w-3.5 h-3.5" />
                         </button>
-                      ))}
+                      )}
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {filteredAvailable.length === 0 ? (
+                        <p className="text-xs text-gray-600 text-center py-4">No currencies match</p>
+                      ) : (
+                        filteredAvailable.map(cur => (
+                          <button
+                            key={cur.code}
+                            onClick={() => addCurrency(cur.code)}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-800 transition-colors border-b border-gray-800/40 last:border-0"
+                          >
+                            <span className="text-lg">{cur.flag}</span>
+                            <span className="text-sm text-gray-200 flex-1 truncate">{cur.name}</span>
+                            <span className="text-xs font-semibold text-gray-500 shrink-0">{cur.code}</span>
+                          </button>
+                        ))
+                      )}
                     </div>
                     <button
-                      onClick={() => setShowPicker(false)}
+                      onClick={() => { setShowPicker(false); setPickerSearch('') }}
                       className="w-full py-2.5 text-xs text-gray-500 hover:text-gray-300 border-t border-gray-700/60 transition-colors"
                     >
                       Cancel
@@ -297,7 +301,7 @@ export default function CurrencyConverter({ onClose }: Props) {
                     className="w-full py-3 flex items-center justify-center gap-2 text-sm font-medium text-mpesa hover:text-mpesa/70 transition-colors"
                   >
                     <Plus className="w-4 h-4" />
-                    Add new currency...
+                    Add currency…
                   </button>
                 )
               )}

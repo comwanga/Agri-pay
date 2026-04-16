@@ -1,31 +1,10 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Bitcoin, Globe, Moon, Languages, Check, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Bitcoin, Globe, Moon, Languages, Check, ChevronDown, Search, X } from 'lucide-react'
 import clsx from 'clsx'
 import { useDisplaySettings } from '../context/displaySettings.tsx'
 import type { AppTheme, BtcUnit } from '../context/displaySettings.tsx'
-import { useState } from 'react'
-
-// ── Data ──────────────────────────────────────────────────────────────────────
-
-const CURRENCIES = [
-  { code: 'KES', name: 'Kenyan Shilling',    flag: '🇰🇪' },
-  { code: 'USD', name: 'US Dollar',          flag: '🇺🇸' },
-  { code: 'EUR', name: 'Euro',               flag: '🇪🇺' },
-  { code: 'GBP', name: 'British Pound',      flag: '🇬🇧' },
-  { code: 'NGN', name: 'Nigerian Naira',     flag: '🇳🇬' },
-  { code: 'UGX', name: 'Ugandan Shilling',   flag: '🇺🇬' },
-  { code: 'TZS', name: 'Tanzanian Shilling', flag: '🇹🇿' },
-  { code: 'ZAR', name: 'South African Rand', flag: '🇿🇦' },
-  { code: 'GHS', name: 'Ghanaian Cedi',      flag: '🇬🇭' },
-  { code: 'ETB', name: 'Ethiopian Birr',     flag: '🇪🇹' },
-  { code: 'RWF', name: 'Rwandan Franc',      flag: '🇷🇼' },
-  { code: 'JPY', name: 'Japanese Yen',       flag: '🇯🇵' },
-  { code: 'CNY', name: 'Chinese Yuan',       flag: '🇨🇳' },
-  { code: 'INR', name: 'Indian Rupee',       flag: '🇮🇳' },
-  { code: 'AED', name: 'UAE Dirham',         flag: '🇦🇪' },
-  { code: 'CAD', name: 'Canadian Dollar',    flag: '🇨🇦' },
-  { code: 'AUD', name: 'Australian Dollar',  flag: '🇦🇺' },
-] as const
+import { WORLD_CURRENCIES, getCurrencyMeta } from '../data/currencies.ts'
 
 const LANGUAGES = [
   { code: 'English', label: 'English',      flag: '🇬🇧' },
@@ -126,14 +105,26 @@ function OptionItem({ label, hint, selected, onSelect }: SimpleOptionProps) {
 export default function DisplayOptions() {
   const navigate = useNavigate()
   const { btcUnit, fiatCurrency, theme, language, update } = useDisplaySettings()
-  const [expanded, setExpanded] = useState<ExpandedRow>(null)
+  const [expanded, setExpanded]         = useState<ExpandedRow>(null)
+  const [currencySearch, setCurrencySearch] = useState('')
 
   function toggle(row: ExpandedRow) {
-    setExpanded(prev => prev === row ? null : row)
+    setExpanded(prev => {
+      if (prev === row) return null
+      if (row !== 'fiatCurrency') setCurrencySearch('')
+      return row
+    })
   }
 
-  const fiatMeta  = CURRENCIES.find(c => c.code === fiatCurrency) ?? CURRENCIES[0]
-  const langMeta  = LANGUAGES.find(l => l.code === language) ?? LANGUAGES[0]
+  const fiatMeta = getCurrencyMeta(fiatCurrency) ?? WORLD_CURRENCIES[0]
+  const langMeta = LANGUAGES.find(l => l.code === language) ?? LANGUAGES[0]
+
+  const filteredCurrencies = currencySearch.trim()
+    ? WORLD_CURRENCIES.filter(c =>
+        c.name.toLowerCase().includes(currencySearch.toLowerCase()) ||
+        c.code.toLowerCase().includes(currencySearch.toLowerCase()),
+      )
+    : WORLD_CURRENCIES
 
   return (
     <div className="p-4 sm:p-6 max-w-lg space-y-5">
@@ -189,38 +180,59 @@ export default function DisplayOptions() {
           value={
             <span className="flex items-center gap-1.5">
               <span>{fiatMeta.flag}</span>
-              <span>{fiatCurrency}</span>
+              <span>{fiatCurrency} — {fiatMeta.name}</span>
             </span>
           }
           expanded={expanded === 'fiatCurrency'}
           onToggle={() => toggle('fiatCurrency')}
         >
-          <div className="max-h-56 overflow-y-auto">
-            {CURRENCIES.map(cur => (
-              <button
-                key={cur.code}
-                onClick={() => { update({ fiatCurrency: cur.code }); setExpanded(null) }}
-                className={clsx(
-                  'w-full flex items-center justify-between px-5 py-3 text-left transition-colors',
-                  'border-b border-gray-800/40 last:border-0',
-                  fiatCurrency === cur.code ? 'bg-brand-500/10' : 'hover:bg-white/[0.03]',
-                )}
-              >
-                <span className="flex items-center gap-3">
-                  <span className="text-lg">{cur.flag}</span>
-                  <span>
-                    <span className={clsx(
-                      'text-sm block',
-                      fiatCurrency === cur.code ? 'text-gray-100 font-medium' : 'text-gray-300',
-                    )}>
-                      {cur.name}
-                    </span>
-                    <span className="text-xs text-gray-500">{cur.code}</span>
-                  </span>
-                </span>
-                {fiatCurrency === cur.code && <Check className="w-4 h-4 text-brand-400 shrink-0" />}
+          {/* Search */}
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-800/60 bg-gray-900">
+            <Search className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+            <input
+              autoFocus
+              type="text"
+              placeholder="Search currency or country…"
+              value={currencySearch}
+              onChange={e => setCurrencySearch(e.target.value)}
+              className="flex-1 bg-transparent text-sm text-gray-200 placeholder-gray-600 outline-none"
+            />
+            {currencySearch && (
+              <button onClick={() => setCurrencySearch('')} className="text-gray-600 hover:text-gray-400">
+                <X className="w-3.5 h-3.5" />
               </button>
-            ))}
+            )}
+          </div>
+          <div className="max-h-60 overflow-y-auto">
+            {filteredCurrencies.length === 0 ? (
+              <p className="text-xs text-gray-600 text-center py-5">No currencies match</p>
+            ) : (
+              filteredCurrencies.map(cur => (
+                <button
+                  key={cur.code}
+                  onClick={() => { update({ fiatCurrency: cur.code }); setExpanded(null); setCurrencySearch('') }}
+                  className={clsx(
+                    'w-full flex items-center justify-between px-5 py-3 text-left transition-colors',
+                    'border-b border-gray-800/40 last:border-0',
+                    fiatCurrency === cur.code ? 'bg-brand-500/10' : 'hover:bg-white/[0.03]',
+                  )}
+                >
+                  <span className="flex items-center gap-3">
+                    <span className="text-lg">{cur.flag}</span>
+                    <span>
+                      <span className={clsx(
+                        'text-sm block',
+                        fiatCurrency === cur.code ? 'text-gray-100 font-medium' : 'text-gray-300',
+                      )}>
+                        {cur.name}
+                      </span>
+                      <span className="text-xs text-gray-500">{cur.code}</span>
+                    </span>
+                  </span>
+                  {fiatCurrency === cur.code && <Check className="w-4 h-4 text-brand-400 shrink-0 ml-2" />}
+                </button>
+              ))
+            )}
           </div>
         </SettingRow>
 
