@@ -126,42 +126,44 @@ export default function LightningInvoiceCard({
     ? `${mins}:${String(secs).padStart(2, '0')}`
     : `${secsLeft}s`
 
-  // ── Expired overlay ────────────────────────────────────────────────────────
-  if (expired) {
-    return (
-      <div className="space-y-4">
-        <div className="bg-gray-800/80 rounded-2xl p-6 text-center space-y-3 border border-gray-700">
-          <div className="w-12 h-12 rounded-full bg-red-900/30 border border-red-700/40 flex items-center justify-center mx-auto">
-            <Zap className="w-6 h-6 text-red-400" />
+  // ── Active invoice ─────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-4">
+
+      {/* ── Expired banner (replaces QR section; preimage/in-person stay) ──────
+          When the invoice expires the QR is no longer valid for new payments,
+          but a user who already scanned and paid must still be able to paste
+          their preimage or confirm in-person. Hiding those controls is the
+          blocker — so we keep them visible and only swap out the scan section.
+      */}
+      {expired ? (
+        <div className="rounded-2xl p-4 space-y-3 border border-red-700/40 bg-red-900/10">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-red-900/40 border border-red-700/40 flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4 text-red-400" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-100">Invoice expired</p>
+              <p className="text-xs text-gray-500">
+                The QR can no longer accept new payments.
+              </p>
+            </div>
           </div>
-          <p className="font-semibold text-gray-100">Invoice expired</p>
-          <p className="text-xs text-gray-500 leading-relaxed">
-            The rate was locked for {totalSecs}s. Get a fresh invoice at the current rate.
+          <p className="text-xs text-yellow-400/90 bg-yellow-900/20 border border-yellow-700/30 rounded-lg px-3 py-2 leading-relaxed">
+            Already scanned and paid? Paste your preimage below to confirm — or tap "I received my goods" for in-person pickup.
           </p>
           <button
-            onClick={() => {
-              setExpired(false)
-              onRefresh()
-            }}
+            onClick={() => { setExpired(false); onRefresh() }}
             disabled={isRefreshing}
-            className="btn-primary mx-auto"
+            className="btn-primary w-full justify-center"
           >
             {isRefreshing
               ? <><Loader2 className="w-4 h-4 animate-spin" /> Getting new invoice…</>
               : <><RefreshCw className="w-4 h-4" /> Get New Invoice</>}
           </button>
         </div>
-        <button onClick={onCancel} className="btn-secondary w-full justify-center text-sm">
-          Cancel
-        </button>
-      </div>
-    )
-  }
-
-  // ── Active invoice ─────────────────────────────────────────────────────────
-  return (
-    <div className="space-y-4">
-
+      ) : (
+        <>
       {/* ── Header: amount + circular countdown ─────────────────────────────── */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -281,8 +283,11 @@ export default function LightningInvoiceCard({
             : <><Zap className="w-4 h-4" /> Pay with Fedi / WebLN</>}
         </button>
       )}
+        </> /* end of non-expired section */
+      )} {/* end expired ? ... : ... */}
 
       {/* ── Manual preimage ─────────────────────────────────────────────────── */}
+      {/* Always visible — user may have paid just before the timer expired */}
       <div className="space-y-1.5 border-t border-gray-700 pt-3">
         <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
           Paid with another wallet?
