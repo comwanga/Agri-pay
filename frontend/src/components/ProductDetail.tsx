@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, MapPin, Package, Truck, Zap, QrCode,
   CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Copy, Check,
-  Smartphone, Loader2,
+  Smartphone, Loader2, ShoppingCart,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import {
@@ -13,6 +13,7 @@ import {
   rateProduct, initiateMpesaPay, getMpesaPaymentStatus,
 } from '../api/client.ts'
 import { useAuth } from '../context/auth.tsx'
+import { useCart } from '../context/cart.tsx'
 import StarRating from './StarRating.tsx'
 import clsx from 'clsx'
 
@@ -24,6 +25,8 @@ export default function ProductDetail() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { authed, connecting, connect } = useAuth()
+  const { addItem, items } = useCart()
+  const [cartAdded, setCartAdded] = useState(false)
 
   const [imgIdx, setImgIdx] = useState(0)
   const [buyStep, setBuyStep] = useState<BuyStep | null>(null)
@@ -415,24 +418,48 @@ export default function ProductDetail() {
 
           {/* Buy flow */}
           {buyStep === null && (
-            <button
-              disabled={qty <= 0 || connecting}
-              onClick={() => {
-                if (!authed) { connect(); return }
-                setBuyStep('details')
-                setPayError(null)
-              }}
-              className="btn-primary w-full justify-center"
-            >
-              <Zap className="w-4 h-4" />
-              {qty <= 0
-                ? 'Out of Stock'
-                : connecting
-                  ? 'Connecting…'
-                  : authed
-                    ? 'Buy Now'
-                    : 'Connect to Buy'}
-            </button>
+            <div className="space-y-2">
+              <button
+                disabled={qty <= 0 || connecting}
+                onClick={() => {
+                  if (!authed) { connect(); return }
+                  setBuyStep('details')
+                  setPayError(null)
+                }}
+                className="btn-primary w-full justify-center"
+              >
+                <Zap className="w-4 h-4" />
+                {qty <= 0
+                  ? 'Out of Stock'
+                  : connecting
+                    ? 'Connecting…'
+                    : authed
+                      ? 'Buy Now'
+                      : 'Connect to Buy'}
+              </button>
+
+              {qty > 0 && (
+                <button
+                  onClick={() => {
+                    addItem(product, 1)
+                    setCartAdded(true)
+                    setTimeout(() => setCartAdded(false), 1500)
+                  }}
+                  className={clsx(
+                    'btn-secondary w-full justify-center gap-2',
+                    cartAdded && 'text-brand-400 border-brand-500/40',
+                  )}
+                >
+                  {cartAdded ? (
+                    <><Check className="w-4 h-4" /> Added to cart</>
+                  ) : items.some(i => i.product.id === product.id) ? (
+                    <><ShoppingCart className="w-4 h-4" /> In cart</>
+                  ) : (
+                    <><ShoppingCart className="w-4 h-4" /> Add to cart</>
+                  )}
+                </button>
+              )}
+            </div>
           )}
 
           {/* Step: quantity + location */}

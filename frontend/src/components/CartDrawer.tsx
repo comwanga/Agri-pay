@@ -28,7 +28,7 @@ interface CartDrawerProps {
 export default function CartDrawer({ open, onClose }: CartDrawerProps) {
   const navigate   = useNavigate()
   const { authed, connect } = useAuth()
-  const { items, totalKes, removeItem, setQuantity, clear } = useCart()
+  const { items, totalKes, removeItem, setQuantity } = useCart()
 
   const [locationName, setLocationName] = useState('')
   const [locating,     setLocating]     = useState(false)
