@@ -3,7 +3,8 @@ use crate::error::{AppError, AppResult};
 use crate::state::SharedState;
 use axum::{
     extract::{Multipart, Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
     Json,
 };
 use chrono::{DateTime, Utc};
@@ -133,6 +134,30 @@ pub struct ListProductsQuery {
     pub per_page: Option<i64>,
     /// Sort: "rating" | "price_asc" | "price_desc" | "newest" (default).
     pub sort: Option<String>,
+    /// Opaque cursor for keyset pagination (base64url JSON with `ts` + `id`).
+    /// Only honoured when `sort` is "newest" or absent and no full-text search.
+    /// Supersedes `page` when present.
+    pub cursor: Option<String>,
+}
+
+// ── Cursor helpers ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+struct CursorData {
+    ts: DateTime<Utc>,
+    id: Uuid,
+}
+
+fn decode_cursor(s: &str) -> Option<CursorData> {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    let bytes = URL_SAFE_NO_PAD.decode(s).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+fn encode_cursor(ts: DateTime<Utc>, id: Uuid) -> String {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    // Intentionally compact — no pretty-printing.
+    URL_SAFE_NO_PAD.encode(serde_json::json!({"ts": ts, "id": id}).to_string())
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -274,35 +299,56 @@ fn detect_image_ext(data: &[u8]) -> Option<&'static str> {
 /// GET /api/products
 ///
 /// Query params:
-///   q        — full-text search (optional)
-///   scope    — "local" | "country" | "global" (default: "global")
-///   country  — ISO 3166-1 alpha-2 (used for scope=country)
-///   ships_to — filter to products that ship to this country
-///   category — category filter
+///   q         — full-text search (optional)
+///   scope     — "local" | "country" | "global" (default: "global")
+///   country   — ISO 3166-1 alpha-2 (used for scope=country)
+///   ships_to  — filter to products that ship to this country
+///   category  — category filter
 ///   seller_id — seller UUID filter
-///   sort     — "rating" | "price_asc" | "price_desc" | "newest"
-///   page, per_page — pagination
+///   sort      — "rating" | "price_asc" | "price_desc" | "newest"
+///   page, per_page — offset pagination (ignored when `cursor` present)
+///   cursor    — opaque base64url cursor for keyset pagination (newest sort only)
+///
+/// When `cursor` is in the response headers (`X-Next-Cursor`), pass it as the
+/// `cursor` query param in the next request to fetch the next page.
 pub async fn list_products(
     State(state): State<SharedState>,
     Query(q): Query<ListProductsQuery>,
-) -> AppResult<Json<Vec<Product>>> {
-    let page = q.page.unwrap_or(1).max(1);
+) -> AppResult<impl IntoResponse> {
     let per_page = q.per_page.unwrap_or(20).clamp(1, 100);
-    let offset = (page - 1) * per_page;
 
     let scope = q.scope.as_deref().unwrap_or("global");
 
-    // Build ORDER BY clause
+    // Build ORDER BY clause.
+    // When a search query is provided and sort=rank (or no sort specified with a query),
+    // use ts_rank for relevance ordering. Otherwise fall back to date/price sorts.
+    let has_query = q.q.is_some();
     let order_by = match q.sort.as_deref() {
+        Some("rank") if has_query =>
+            "ts_rank(p.search_vector, plainto_tsquery('english', $7)) DESC, p.created_at DESC",
         Some("rating") => "COALESCE(pr.avg_rating, 0) DESC, p.created_at DESC",
         Some("price_asc") => "p.price_kes ASC",
         Some("price_desc") => "p.price_kes DESC",
-        _ => "p.created_at DESC",
+        // Default: when there's a search query, rank by relevance; otherwise by date.
+        _ if has_query =>
+            "ts_rank(p.search_vector, plainto_tsquery('english', $7)) DESC, p.created_at DESC",
+        _ => "p.created_at DESC, p.id DESC",
     };
 
-    // Build the WHERE clause dynamically
-    // We use a parameterised query with all optional clauses baked in via
-    // SQL CASE/coalesce guards so we stay safe against injection.
+    // Cursor pagination: only supported for created_at DESC ordering (newest + no FTS).
+    // For any other sort, or when a full-text query is present, fall back to OFFSET.
+    let use_cursor = q.cursor.is_some()
+        && !has_query
+        && matches!(q.sort.as_deref(), None | Some("newest"));
+
+    let cursor_data: Option<CursorData> = q
+        .cursor
+        .as_deref()
+        .and_then(decode_cursor)
+        .filter(|_| use_cursor);
+
+    // Build the WHERE clause dynamically.
+    // All optional conditions use IS NULL guards so the query plan stays stable.
     let search_clause = if q.q.is_some() {
         "AND p.search_vector @@ plainto_tsquery('english', $7)"
     } else {
@@ -320,6 +366,15 @@ pub async fn list_products(
         "AND ($9::text IS NULL)"
     };
 
+    // Cursor condition: excludes rows at or after (later than) the cursor position.
+    // Row-value comparison (a, b) < (x, y) means a < x OR (a = x AND b < y),
+    // which correctly pages forward in a created_at DESC, id DESC ordering.
+    // Both $10 and $11 are always referenced so PostgreSQL never sees unbound params.
+    let cursor_clause =
+        "AND ($10::timestamptz IS NULL \
+           OR p.created_at < $10 \
+           OR (p.created_at = $10 AND p.id < $11))";
+
     let base_select = "
         SELECT p.id, p.seller_id, f.name AS seller_name,
                p.title, p.description, p.price_kes, p.unit,
@@ -335,6 +390,18 @@ pub async fn list_products(
             FROM product_ratings GROUP BY product_id
         ) pr ON pr.product_id = p.id";
 
+    // Fetch one extra row to detect whether a next page exists.
+    let fetch_limit = per_page + 1;
+
+    // When using cursor pagination, OFFSET is always 0.
+    // When using legacy offset pagination, compute it from page.
+    let offset = if use_cursor {
+        0i64
+    } else {
+        let page = q.page.unwrap_or(1).max(1);
+        (page - 1) * per_page
+    };
+
     let sql = format!(
         "{base_select}
          WHERE p.status = 'active'
@@ -343,31 +410,60 @@ pub async fn list_products(
            {country_clause}
            {ships_to_clause}
            {search_clause}
+           {cursor_clause}
          ORDER BY {order_by}
          LIMIT $5 OFFSET $6",
     );
 
-    // $1=category, $2=seller_id, $3=<unused slot>, $4=<unused slot>,
-    // $5=per_page, $6=offset, $7=search_query, $8=country, $9=ships_to
-    // Note: we bind them positionally.
+    // Parameter binding order:
+    //  $1  = category
+    //  $2  = seller_id
+    //  $3  = placeholder (unused)
+    //  $4  = placeholder (unused)
+    //  $5  = limit (per_page + 1 for has-more detection)
+    //  $6  = offset
+    //  $7  = search query
+    //  $8  = country
+    //  $9  = ships_to
+    //  $10 = cursor_ts (NULL when not using cursor)
+    //  $11 = cursor_id (ignored when $10 IS NULL)
     let rows: Vec<ProductRow> = sqlx::query_as(&sql)
-        .bind(q.category.as_deref())
-        .bind(q.seller_id)
-        .bind(Option::<String>::None) // $3 placeholder
-        .bind(Option::<String>::None) // $4 placeholder
-        .bind(per_page)
-        .bind(offset)
-        .bind(q.q.as_deref())
-        .bind(q.country.as_deref())
-        .bind(q.ships_to.as_deref())
+        .bind(q.category.as_deref())           // $1
+        .bind(q.seller_id)                     // $2
+        .bind(Option::<String>::None)           // $3 placeholder
+        .bind(Option::<String>::None)           // $4 placeholder
+        .bind(fetch_limit)                     // $5
+        .bind(offset)                          // $6
+        .bind(q.q.as_deref())                  // $7
+        .bind(q.country.as_deref())            // $8
+        .bind(q.ships_to.as_deref())           // $9
+        .bind(cursor_data.as_ref().map(|c| c.ts))  // $10
+        .bind(cursor_data.as_ref().map(|c| c.id))  // $11
         .fetch_all(&state.db)
         .await?;
+
+    // Determine whether there is a next page.
+    let has_more = rows.len() as i64 > per_page;
+    // Truncate to the requested page size.
+    let rows: Vec<ProductRow> = rows.into_iter().take(per_page as usize).collect();
+
+    // Build the next-cursor from the last row's (created_at, id).
+    // Only emit when using cursor mode and there really is a next page.
+    let next_cursor: Option<String> = if has_more && use_cursor {
+        rows.last().map(|r| encode_cursor(r.created_at, r.id))
+    } else if has_more && !use_cursor {
+        // Emit a cursor even for offset-based first page so callers can
+        // switch to cursor pagination seamlessly.
+        rows.last().map(|r| encode_cursor(r.created_at, r.id))
+    } else {
+        None
+    };
 
     // Batch-fetch all images in a single query (fixes N+1)
     let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
     let mut images_map = fetch_images_batch(&state.db, &ids).await?;
 
-    let products = rows
+    let products: Vec<Product> = rows
         .into_iter()
         .map(|row| {
             let images = images_map.remove(&row.id).unwrap_or_default();
@@ -375,7 +471,16 @@ pub async fn list_products(
         })
         .collect();
 
-    Ok(Json(products))
+    // Return next-cursor in a response header so callers can paginate without
+    // changing the response body shape.
+    let mut headers = HeaderMap::new();
+    if let Some(ref cursor_str) = next_cursor {
+        if let Ok(v) = cursor_str.parse() {
+            headers.insert("x-next-cursor", v);
+        }
+    }
+
+    Ok((headers, Json(products)))
 }
 
 /// GET /api/products/:id

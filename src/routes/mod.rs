@@ -11,7 +11,8 @@ use crate::ratings::handlers as rating_handlers;
 use crate::state::SharedState;
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{header, StatusCode},
+    response::IntoResponse,
     routing::{delete, get, patch, post},
     Json, Router,
 };
@@ -79,6 +80,18 @@ impl KeyExtractor for TrustedIpExtractor {
 pub fn router(_state: SharedState) -> Router<SharedState> {
     // ── Rate-limiter configs ──────────────────────────────────────────────────
     //
+    // auth_governor: tight limit on login/register endpoints — these are the
+    // primary brute-force and credential-stuffing targets. 1 req/s burst 5
+    // is generous for legitimate use while making automated attacks impractical.
+    let auth_governor_conf = Arc::new(
+        GovernorConfigBuilder::default()
+            .per_second(1)
+            .burst_size(5)
+            .key_extractor(TrustedIpExtractor)
+            .finish()
+            .expect("auth governor config"),
+    );
+
     // invoice_governor: POST /payments/invoice hits an external LNURL endpoint
     // for each request — 2 req/s burst 5 per IP to prevent abuse.
     let invoice_governor_conf = Arc::new(
@@ -101,12 +114,16 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
             .expect("global governor config"),
     );
 
-    // ── Auth ─────────────────────────────────────────────────────────────────
+    // ── Auth — strict rate limit (brute-force / credential-stuffing target) ──
     let auth_routes = Router::new()
         .route("/auth/login", post(auth::login))
         .route("/auth/nostr", post(auth::nostr_login))
         .route("/auth/pubkey", post(auth::pubkey_login))
-        .route("/auth/register", post(auth::register));
+        .route("/auth/register", post(auth::register))
+        .route("/auth/refresh", post(auth::refresh_token))
+        .layer(GovernorLayer {
+            config: auth_governor_conf,
+        });
 
     // ── Farmers ───────────────────────────────────────────────────────────────
     let farmer_routes = Router::new()
@@ -162,7 +179,12 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
             "/orders/:id/status",
             patch(order_handlers::update_order_status),
         )
-        .route("/orders/:id", delete(order_handlers::cancel_order));
+        .route("/orders/:id", delete(order_handlers::cancel_order))
+        .route(
+            "/orders/:id/messages",
+            get(crate::orders::messages::get_messages)
+                .post(crate::orders::messages::send_message),
+        );
 
     // ── Payments — tight rate limit (both endpoints call external LNURL) ────────
     let payment_invoice_route = Router::new()
@@ -194,8 +216,9 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
         )
         .route("/webhooks/btcpay", post(lnurl_server::btcpay_webhook));
 
-    // ── M-Pesa STK Push ───────────────────────────────────────────────────────
-    // The callback has no JWT auth (Daraja calls it server-to-server).
+    // ── M-Pesa STK Push + B2C disbursement ───────────────────────────────────
+    // Callback and B2C result/timeout routes have no JWT auth (Daraja calls
+    // them server-to-server from Safaricom's IP range).
     let mpesa_routes = Router::new()
         .route(
             "/payments/mpesa/stk-push",
@@ -208,6 +231,14 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
         .route(
             "/payments/mpesa/:checkout_id/status",
             get(mpesa_handlers::get_mpesa_status),
+        )
+        .route(
+            "/payments/mpesa/b2c/result",
+            post(crate::mpesa::b2c::b2c_result),
+        )
+        .route(
+            "/payments/mpesa/b2c/timeout",
+            post(crate::mpesa::b2c::b2c_timeout),
         );
 
     // ── Disputes ──────────────────────────────────────────────────────────────
@@ -222,13 +253,29 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
             "/admin/disputes/:order_id/resolve",
             patch(dispute_handlers::resolve_dispute),
         )
-        .route("/admin/refunds", get(dispute_handlers::list_stuck_refunds));
+        .route("/admin/refunds", get(dispute_handlers::list_stuck_refunds))
+        .route(
+            "/admin/disbursements",
+            get(crate::mpesa::b2c::list_disbursements),
+        );
+
+    // ── Storefront (public — no auth) ─────────────────────────────────────────
+    let storefront_routes = Router::new().route(
+        "/storefront/:id",
+        get(crate::farmers::storefront::get_storefront),
+    );
 
     // ── Oracle ────────────────────────────────────────────────────────────────
     let oracle_routes = Router::new().route("/oracle/rate", get(oracle_handlers::get_rate));
 
     // ── Health ────────────────────────────────────────────────────────────────
     let health_route = Router::new().route("/health", get(health_check));
+
+    // ── Prometheus metrics ────────────────────────────────────────────────────
+    // Exposes runtime counters for Prometheus / Grafana scraping.
+    // In production, restrict access to this endpoint at the ingress/firewall
+    // level so it is only reachable from your monitoring network.
+    let metrics_route = Router::new().route("/metrics", get(metrics_handler));
 
     // ── Assemble with global rate limit + concurrency cap ────────────────────
     Router::new()
@@ -242,7 +289,9 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
         .merge(lnurl_routes)
         .merge(dispute_routes)
         .merge(oracle_routes)
+        .merge(storefront_routes)
         .merge(health_route)
+        .merge(metrics_route)
         .layer(GovernorLayer {
             config: global_governor_conf,
         })
@@ -277,4 +326,24 @@ async fn health_check(State(state): State<SharedState>) -> (StatusCode, Json<ser
             },
         })),
     )
+}
+
+/// GET /api/metrics
+///
+/// Returns Prometheus text exposition format.  Suitable for scraping with
+/// Prometheus, Grafana Agent, or any compatible collector.
+///
+/// In production, restrict this endpoint to your monitoring network at the
+/// ingress or firewall level — the payload does not contain PII but does
+/// expose operational counters that shouldn't be public.
+async fn metrics_handler(State(state): State<SharedState>) -> impl IntoResponse {
+    match &state.metrics {
+        Some(handle) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+            handle.render(),
+        )
+            .into_response(),
+        None => (StatusCode::SERVICE_UNAVAILABLE, "metrics not available").into_response(),
+    }
 }

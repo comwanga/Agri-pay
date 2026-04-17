@@ -9,6 +9,7 @@ import { getRate, clearToken } from '../api/client.ts'
 import { useCurrentFarmer } from '../hooks/useCurrentFarmer.ts'
 import { useAuth } from '../context/auth.tsx'
 import { useDisplaySettings } from '../context/displaySettings.tsx'
+import { useTranslation } from '../i18n/index.tsx'
 import CurrencyConverter from './CurrencyConverter.tsx'
 import clsx from 'clsx'
 import type { ReactNode } from 'react'
@@ -128,6 +129,7 @@ function SidebarContent({ onNav, onOpenConverter }: SidebarContentProps) {
   const { authed, connecting, connect, isAdmin } = useAuth()
   const { farmer, needsSetup } = useCurrentFarmer()
   const { fiatCurrency } = useDisplaySettings()
+  const { t } = useTranslation()
 
   function handleLogout() {
     clearToken()
@@ -139,36 +141,36 @@ function SidebarContent({ onNav, onOpenConverter }: SidebarContentProps) {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         <p className="px-3 mb-2 text-[10px] font-semibold text-gray-600 uppercase tracking-widest">
-          Marketplace
+          {t('nav.section.marketplace')}
         </p>
-        <SideNavItem to="/" icon={<ShoppingBag />} label="Browse" end onClick={onNav} />
-        <SideNavItem to="/orders" icon={<Package />} label="My Orders" onClick={onNav} />
+        <SideNavItem to="/" icon={<ShoppingBag />} label={t('nav.browse')} end onClick={onNav} />
+        <SideNavItem to="/orders" icon={<Package />} label={t('nav.orders')} onClick={onNav} />
 
         <p className="px-3 mt-4 mb-2 text-[10px] font-semibold text-gray-600 uppercase tracking-widest">
-          Selling
+          {t('nav.section.selling')}
         </p>
-        <SideNavItem to="/sell" icon={<Store />} label="My Listings" onClick={onNav} />
-        <SideNavItem to="/payments" icon={<History />} label="Payment History" onClick={onNav} />
-        <SideNavItem to="/settings" icon={<Settings />} label="Display Options" onClick={onNav} />
+        <SideNavItem to="/sell" icon={<Store />} label={t('nav.sell')} onClick={onNav} />
+        <SideNavItem to="/payments" icon={<History />} label={t('nav.payments')} onClick={onNav} />
+        <SideNavItem to="/settings" icon={<Settings />} label={t('nav.settings')} onClick={onNav} />
         <button
           onClick={() => { navigate('/sell/new'); onNav?.() }}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full text-left text-gray-400 hover:text-gray-200 hover:bg-gray-800"
         >
           <span className="w-5 h-5 shrink-0"><Plus /></span>
-          <span>New Listing</span>
+          <span>{t('nav.new_listing')}</span>
         </button>
 
         {isAdmin && (
           <>
             <p className="px-3 mt-4 mb-2 text-[10px] font-semibold text-gray-600 uppercase tracking-widest">
-              Admin
+              {t('nav.section.admin')}
             </p>
-            <SideNavItem to="/admin" icon={<Shield />} label="Disputes & Users" onClick={onNav} />
+            <SideNavItem to="/admin" icon={<Shield />} label={t('nav.admin')} onClick={onNav} />
           </>
         )}
 
         <p className="px-3 mt-4 mb-2 text-[10px] font-semibold text-gray-600 uppercase tracking-widest">
-          Account
+          {t('nav.section.account')}
         </p>
         {authed ? (
           <NavLink
@@ -189,7 +191,7 @@ function SidebarContent({ onNav, onOpenConverter }: SidebarContentProps) {
                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-yellow-400" />
               )}
             </span>
-            <span className="flex-1">{farmer?.name ?? 'Profile'}</span>
+            <span className="flex-1">{farmer?.name ?? t('nav.profile')}</span>
             {needsSetup && (
               <span className="text-[10px] font-semibold text-yellow-400 bg-yellow-400/10 px-1.5 py-0.5 rounded">
                 Setup
@@ -203,7 +205,7 @@ function SidebarContent({ onNav, onOpenConverter }: SidebarContentProps) {
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full text-left text-brand-400 hover:text-brand-300 hover:bg-brand-500/10"
           >
             <span className="w-5 h-5 shrink-0"><LogIn /></span>
-            <span>{connecting ? 'Connecting…' : 'Connect'}</span>
+            <span>{connecting ? t('nav.connecting') : t('nav.connect')}</span>
           </button>
         )}
       </nav>
@@ -216,7 +218,7 @@ function SidebarContent({ onNav, onOpenConverter }: SidebarContentProps) {
         >
           <AlertCircle className="w-3.5 h-3.5 text-yellow-400 shrink-0 mt-0.5" />
           <p className="text-[11px] text-yellow-400 leading-snug">
-            Add your Lightning Address to receive payments
+            {t('nav.add_lightning')}
           </p>
         </button>
       )}
@@ -234,7 +236,7 @@ function SidebarContent({ onNav, onOpenConverter }: SidebarContentProps) {
               title="Currency Converter"
             >
               <ArrowLeftRight className="w-3 h-3" />
-              Converter
+              {t('nav.converter')}
             </button>
           </div>
           <RateDisplay />
@@ -245,7 +247,7 @@ function SidebarContent({ onNav, onOpenConverter }: SidebarContentProps) {
             className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-300 transition-colors"
           >
             <LogOut className="w-3.5 h-3.5" />
-            Sign out
+            {t('nav.sign_out')}
           </button>
         )}
       </div>

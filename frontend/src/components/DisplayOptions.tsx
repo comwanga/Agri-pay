@@ -290,9 +290,6 @@ export default function DisplayOptions() {
               {language === lang.code && <Check className="w-4 h-4 text-brand-400 shrink-0" />}
             </button>
           ))}
-          <p className="text-xs text-gray-600 text-center py-2.5 px-5 border-t border-gray-800/40">
-            Full translations coming soon
-          </p>
         </SettingRow>
 
       </div>

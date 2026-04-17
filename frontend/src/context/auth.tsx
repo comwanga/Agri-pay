@@ -1,8 +1,13 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { getToken, nostrLogin, getProfile, getLocalSecretKey } from '../api/client.ts'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import { getToken, nostrLogin, getProfile, getLocalSecretKey, refreshAuthToken } from '../api/client.ts'
 import { getTokenPayload } from '../hooks/useCurrentFarmer.ts'
 import { useNavigate } from 'react-router-dom'
 import ConnectModal from '../components/ConnectModal.tsx'
+
+// Refresh the token when less than this many seconds remain on it.
+const REFRESH_THRESHOLD_SECS = 2 * 60 * 60 // 2 hours
+// Check token expiry every 15 minutes.
+const REFRESH_CHECK_INTERVAL_MS = 15 * 60 * 1000
 
 interface AuthCtx {
   authed: boolean
@@ -39,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
   const navigate = useNavigate()
+  const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const onSuccess = useCallback(async () => {
     setAuthed(true)
@@ -54,6 +60,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch { /* non-fatal */ }
   }, [navigate])
+
+  // Proactive token refresh: keep sessions alive without forcing re-login.
+  // Checks every 15 min; refreshes if less than 2 hours remain on the token.
+  useEffect(() => {
+    function checkAndRefresh() {
+      const payload = getTokenPayload() as { exp?: number } | null
+      if (!payload?.exp) return
+      const secsLeft = payload.exp - Math.floor(Date.now() / 1000)
+      if (secsLeft < REFRESH_THRESHOLD_SECS && secsLeft > 0) {
+        refreshAuthToken().catch(() => {
+          // If refresh fails (e.g. server restarted with new secret) the user
+          // will be logged out on the next authenticated request via the 401 handler.
+        })
+      }
+    }
+
+    if (authed) {
+      checkAndRefresh() // check immediately on login
+      refreshTimer.current = setInterval(checkAndRefresh, REFRESH_CHECK_INTERVAL_MS)
+    }
+
+    return () => {
+      if (refreshTimer.current) clearInterval(refreshTimer.current)
+    }
+  }, [authed])
 
   // Silent background auth — Fedi (window.nostr) or returning users with a stored key
   useEffect(() => {

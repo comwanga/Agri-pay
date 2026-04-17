@@ -6,6 +6,7 @@ mod error;
 mod events;
 mod farmers;
 mod lnurl;
+mod metrics;
 mod mpesa;
 mod notifications;
 mod oracle;
@@ -83,6 +84,20 @@ async fn main() -> Result<()> {
         .timeout(std::time::Duration::from_secs(30))
         .build()?;
 
+    // ── Metrics ───────────────────────────────────────────────────────────────
+    // Install the global Prometheus recorder early so that any counter/gauge
+    // calls during startup (e.g. from the workers) land in the right registry.
+    let metrics_handle = match metrics::init() {
+        Ok(h) => {
+            tracing::info!("Prometheus metrics enabled — scrape at GET /api/metrics");
+            Some(h)
+        }
+        Err(e) => {
+            tracing::warn!("Prometheus metrics disabled: {}", e);
+            None
+        }
+    };
+
     // ── Database ──────────────────────────────────────────────────────────────
     let pool = db::create_pool(&config.database_url).await?;
     db::run_migrations(&pool).await?;
@@ -123,6 +138,7 @@ async fn main() -> Result<()> {
         oracle,
         lnurl,
         mpesa,
+        metrics: metrics_handle,
     });
 
     // ── Background workers ────────────────────────────────────────────────────
@@ -137,6 +153,11 @@ async fn main() -> Result<()> {
     // Not exit-critical — if it stops, old disputes simply aren't auto-closed.
     tokio::spawn(workers::dispute_timeout::run(state.clone()));
     tracing::info!("Dispute timeout worker started (poll interval: 24h)");
+
+    // Disbursement reconciliation worker: marks stale B2C payouts as manual_required.
+    // Not exit-critical — stale payouts are surfaced to finance via /admin/disbursements.
+    tokio::spawn(workers::disbursement::run(state.clone()));
+    tracing::info!("Disbursement reconciliation worker started (poll interval: 10m)");
 
     // ── CORS ──────────────────────────────────────────────────────────────────
     let cors = build_cors(&config);

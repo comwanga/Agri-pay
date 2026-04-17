@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Search, MapPin, Package, Globe, ChevronDown } from 'lucide-react'
-import { listProducts, formatKes } from '../api/client.ts'
+import { Search, MapPin, Package, Globe, ChevronDown, Loader2 } from 'lucide-react'
+import { listProductsPage, formatKes } from '../api/client.ts'
 import { PRODUCT_CATEGORIES, CATEGORY_ICONS } from '../types'
+import { useTranslation } from '../i18n/index.tsx'
 import clsx from 'clsx'
 import type { Product } from '../types'
 import StarRating from './StarRating.tsx'
@@ -29,6 +30,7 @@ const COUNTRIES = [
 
 function ProductCard({ product }: { product: Product }) {
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const primaryImage = product.images.find(i => i.is_primary) ?? product.images[0]
   const qty = parseFloat(product.quantity_avail)
 
@@ -57,7 +59,7 @@ function ProductCard({ product }: { product: Product }) {
         )}
         {product.is_global && (
           <span className="absolute top-2 right-2 text-[10px] font-semibold bg-brand-500/80 text-white px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-            <Globe className="w-2.5 h-2.5" /> Ships globally
+            <Globe className="w-2.5 h-2.5" /> {t('market.ships_globally')}
           </span>
         )}
       </div>
@@ -94,7 +96,7 @@ function ProductCard({ product }: { product: Product }) {
 
         {qty <= 10 && qty > 0 && (
           <p className="text-[11px] text-yellow-400">
-            Only {qty} {product.unit} left
+            {t('market.only_x_left', { qty, unit: product.unit })}
           </p>
         )}
       </div>
@@ -108,6 +110,7 @@ function CountrySelector({ value, onChange }: { value: string; onChange: (v: str
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const selected = COUNTRIES.find(c => c.code === value)
+  const { t } = useTranslation()
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -124,7 +127,7 @@ function CountrySelector({ value, onChange }: { value: string; onChange: (v: str
         className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-500 transition-colors"
       >
         <Globe className="w-3.5 h-3.5 text-gray-400" />
-        {selected ? selected.name : 'All countries'}
+        {selected ? selected.name : t('market.all_countries')}
         <ChevronDown className="w-3 h-3 text-gray-500 ml-0.5" />
       </button>
       {open && (
@@ -136,7 +139,7 @@ function CountrySelector({ value, onChange }: { value: string; onChange: (v: str
               !value ? 'text-brand-400 font-medium' : 'text-gray-300 hover:bg-gray-700',
             )}
           >
-            All countries
+            {t('market.all_countries')}
           </button>
           {COUNTRIES.map(c => (
             <button
@@ -158,39 +161,80 @@ function CountrySelector({ value, onChange }: { value: string; onChange: (v: str
 
 // ── Main marketplace page ──────────────────────────────────────────────────────
 
+const PAGE_SIZE = 24
+
 export default function Marketplace() {
+  const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [category, setCategory] = useState<string>('')
   const [country, setCountry] = useState<string>('')
   const [scope, setScope] = useState<'country' | 'global'>('global')
 
+  // Cursor state for "load more" — reset when filters change
+  const [cursor, setCursor] = useState<string | undefined>(undefined)
+  const [allProducts, setAllProducts] = useState<Product[]>([])
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+
   // Debounce search so we don't fire on every keystroke
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search.trim()), 400)
-    return () => clearTimeout(t)
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 400)
+    return () => clearTimeout(timer)
   }, [search])
 
-  const { data: products = [], isLoading, isError } = useQuery({
-    queryKey: ['products', category, country, scope, debouncedSearch],
-    queryFn: () => listProducts({
+  // Reset accumulated products when filters/search change
+  const filterKey = `${category}|${country}|${scope}|${debouncedSearch}`
+  const prevFilterKey = useRef(filterKey)
+  useEffect(() => {
+    if (prevFilterKey.current !== filterKey) {
+      prevFilterKey.current = filterKey
+      setCursor(undefined)
+      setAllProducts([])
+      setNextCursor(null)
+    }
+  }, [filterKey])
+
+  const { data, isLoading, isError, isFetching } = useQuery({
+    queryKey: ['products', category, country, scope, debouncedSearch, cursor],
+    queryFn: () => listProductsPage({
       category: category || undefined,
       country: country || undefined,
       scope: country ? scope : undefined,
       q: debouncedSearch || undefined,
-      per_page: 60,
-      sort: 'newest',
+      per_page: PAGE_SIZE,
+      cursor,
     }),
     staleTime: 30_000,
   })
+
+  // Accumulate pages
+  useEffect(() => {
+    if (!data) return
+    if (cursor === undefined) {
+      // First/reset page — replace
+      setAllProducts(data.items)
+    } else {
+      // Subsequent page — append
+      setAllProducts(prev => [...prev, ...data.items])
+    }
+    setNextCursor(data.nextCursor)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
+
+  const handleLoadMore = useCallback(() => {
+    if (nextCursor) setCursor(nextCursor)
+  }, [nextCursor])
+
+  const isFirstLoad = isLoading && cursor === undefined
+  const products = allProducts
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
       {/* Header + search row */}
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0">
-          <h1 className="text-lg font-bold text-gray-100 leading-tight">Marketplace</h1>
-          <p className="text-xs text-gray-500 mt-0.5">Buy & sell anything, pay with Lightning</p>
+          <h1 className="text-lg font-bold text-gray-100 leading-tight">{t('market.title')}</h1>
+          <p className="text-xs text-gray-500 mt-0.5">{t('market.subtitle')}</p>
         </div>
         <CountrySelector value={country} onChange={c => { setCountry(c); setScope('country') }} />
       </div>
@@ -201,7 +245,7 @@ export default function Marketplace() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search products, sellers…"
+            placeholder={t('market.search')}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="input-base pl-9"
@@ -217,7 +261,7 @@ export default function Marketplace() {
                 scope === 'country' ? 'bg-gray-700 text-gray-100' : 'text-gray-400 hover:text-gray-200',
               )}
             >
-              {COUNTRIES.find(c => c.code === country)?.name ?? 'Local'}
+              {COUNTRIES.find(c => c.code === country)?.name ?? t('market.local')}
             </button>
             <button
               onClick={() => setScope('global')}
@@ -227,7 +271,7 @@ export default function Marketplace() {
               )}
             >
               <Globe className="w-3 h-3" />
-              Global
+              {t('market.global')}
             </button>
           </div>
         )}
@@ -245,7 +289,7 @@ export default function Marketplace() {
           )}
         >
           <span className="text-lg">🏪</span>
-          <span>All</span>
+          <span>{t('market.all_categories')}</span>
         </button>
         {PRODUCT_CATEGORIES.map(cat => (
           <button
@@ -265,7 +309,7 @@ export default function Marketplace() {
       </div>
 
       {/* Results count */}
-      {!isLoading && !isError && (
+      {!isFirstLoad && !isError && (
         <p className="text-xs text-gray-600 -mt-1">
           {products.length} listing{products.length !== 1 ? 's' : ''}
           {category ? ` · ${category}` : ''}
@@ -274,8 +318,8 @@ export default function Marketplace() {
         </p>
       )}
 
-      {/* Grid */}
-      {isLoading && (
+      {/* Skeleton grid on first load */}
+      {isFirstLoad && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
           {Array.from({ length: 10 }).map((_, i) => (
             <div key={i} className="card overflow-hidden">
@@ -295,21 +339,35 @@ export default function Marketplace() {
         </div>
       )}
 
-      {!isLoading && !isError && products.length === 0 && (
+      {!isFirstLoad && !isError && products.length === 0 && (
         <div className="text-center py-16 space-y-2">
           <Package className="w-10 h-10 text-gray-700 mx-auto" />
-          <p className="text-gray-400 font-medium">No listings found</p>
-          <p className="text-sm text-gray-600">
-            {debouncedSearch ? 'Try a different search term' : 'Be the first to list something!'}
-          </p>
+          <p className="text-gray-400 font-medium">{t('market.empty')}</p>
+          <p className="text-sm text-gray-600">{t('market.empty_hint')}</p>
         </div>
       )}
 
-      {!isLoading && !isError && products.length > 0 && (
+      {!isFirstLoad && !isError && products.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
           {products.map(product => (
             <ProductCard key={product.id} product={product} />
           ))}
+        </div>
+      )}
+
+      {/* Load more */}
+      {nextCursor && !isFirstLoad && (
+        <div className="flex justify-center pt-2">
+          <button
+            onClick={handleLoadMore}
+            disabled={isFetching}
+            className="btn-secondary gap-2"
+          >
+            {isFetching
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : null}
+            {t('market.load_more')}
+          </button>
         </div>
       )}
     </div>

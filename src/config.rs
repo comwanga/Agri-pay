@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use rust_decimal::Decimal;
 
 /// Known example/placeholder JWT secrets from documentation and .env.example.
 /// If JWT_SECRET matches any of these in production, startup fails.
@@ -48,6 +49,25 @@ pub struct Config {
     pub mpesa_callback_url: Option<String>,
     /// "sandbox" or "production"
     pub mpesa_env: String,
+    // Safaricom Daraja B2C (optional — enables automatic seller payouts)
+    /// Daraja API operator username for B2C (set in M-Pesa portal).
+    pub mpesa_b2c_initiator_name: Option<String>,
+    /// Pre-computed security credential: initiator password encrypted with
+    /// Safaricom's public certificate (RSA/PKCS1 + base64). Generate once via
+    /// the Safaricom developer portal or `openssl` using their cert.
+    pub mpesa_b2c_security_credential: Option<String>,
+    /// Daraja will POST B2C results here: must be HTTPS and publicly reachable.
+    pub mpesa_b2c_result_url: Option<String>,
+    /// Daraja will POST B2C timeouts here when a queued payment takes too long.
+    pub mpesa_b2c_timeout_url: Option<String>,
+    // Platform commission rate (default 2.5 %). Stored as a fraction: 0.025.
+    pub platform_commission_rate: rust_decimal::Decimal,
+    // Africa's Talking SMS (optional — enables order-status SMS notifications)
+    pub africas_talking_api_key: Option<String>,
+    pub africas_talking_username: Option<String>,
+    /// Alphanumeric sender ID registered in the AT dashboard (e.g. "SokoPay").
+    /// Optional — if absent, the default shortcode is used.
+    pub africas_talking_sender_id: Option<String>,
 }
 
 impl Config {
@@ -186,6 +206,32 @@ impl Config {
                 .ok()
                 .filter(|s| !s.is_empty()),
             mpesa_env: std::env::var("MPESA_ENV").unwrap_or_else(|_| "sandbox".into()),
+            mpesa_b2c_initiator_name: std::env::var("MPESA_B2C_INITIATOR_NAME")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            mpesa_b2c_security_credential: std::env::var("MPESA_B2C_SECURITY_CREDENTIAL")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            mpesa_b2c_result_url: std::env::var("MPESA_B2C_RESULT_URL")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            mpesa_b2c_timeout_url: std::env::var("MPESA_B2C_TIMEOUT_URL")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            platform_commission_rate: std::env::var("PLATFORM_COMMISSION_RATE")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .and_then(|s| s.parse::<Decimal>().ok())
+                .unwrap_or_else(|| Decimal::new(25, 3)), // default 0.025 = 2.5%
+            africas_talking_api_key: std::env::var("AFRICAS_TALKING_API_KEY")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            africas_talking_username: std::env::var("AFRICAS_TALKING_USERNAME")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            africas_talking_sender_id: std::env::var("AFRICAS_TALKING_SENDER_ID")
+                .ok()
+                .filter(|s| !s.is_empty()),
         })
     }
 }

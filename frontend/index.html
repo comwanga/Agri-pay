@@ -2,9 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏪</text></svg>" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SokoPay - Buy & Sell with Lightning</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#22c55e" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SokoPay" />
+    <link rel="apple-touch-icon" href="/logo.svg" />
+
+    <!-- SEO -->
+    <meta name="description" content="Buy and sell agricultural products. Pay with M-Pesa or Bitcoin Lightning." />
+
     <script>
       // Restore path encoded by 404.html for GitHub Pages SPA routing
       (function () {
@@ -13,6 +26,15 @@
           window.history.replaceState(null, '', '/' + decodeURIComponent(p));
         }
       })();
+
+      // Register service worker for offline support + installability
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').catch(function (err) {
+            console.warn('SW registration failed:', err);
+          });
+        });
+      }
     </script>
   </head>
   <body>

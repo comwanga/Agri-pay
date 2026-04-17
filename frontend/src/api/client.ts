@@ -153,7 +153,7 @@ export async function nostrLoginWithKey(secretKey: Uint8Array): Promise<LoginRes
   return resp
 }
 
-// ─── Core request helper ─────────────────────────────────────────────────────
+// ─── Core request helpers ─────────────────────────────────────────────────────
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getToken()
@@ -189,6 +189,41 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   return res.json() as Promise<T>
+}
+
+/** Like `request`, but also returns the raw response headers. */
+async function requestWithHeaders<T>(
+  path: string,
+  options?: RequestInit,
+): Promise<{ data: T; headers: Headers }> {
+  const token = getToken()
+  const reqHeaders: Record<string, string> = {
+    ...(options?.headers as Record<string, string>),
+  }
+  if (!(options?.body instanceof FormData)) {
+    reqHeaders['Content-Type'] = 'application/json'
+  }
+  if (token) reqHeaders['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${BASE}${path}`, { ...options, headers: reqHeaders })
+
+  if (res.status === 401) {
+    clearToken()
+    window.location.reload()
+    throw new Error('Session expired')
+  }
+  if (!res.ok) {
+    let message = `HTTP ${res.status}: ${res.statusText}`
+    try {
+      const body = await res.json()
+      if (body?.error) message = body.error
+      else if (body?.message) message = body.message
+    } catch { /* ignore */ }
+    throw new Error(message)
+  }
+
+  const data = await res.json() as T
+  return { data, headers: res.headers }
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -283,6 +318,36 @@ export async function listProducts(params?: {
   if (params?.sort) qs.set('sort', params.sort)
   const str = qs.toString()
   return request<Product[]>(`/products${str ? `?${str}` : ''}`)
+}
+
+/** Cursor-paginated product listing.  Returns items + the next-page cursor. */
+export async function listProductsPage(params?: {
+  category?: string
+  seller_id?: string
+  per_page?: number
+  q?: string
+  scope?: 'local' | 'country' | 'global'
+  country?: string
+  ships_to?: string
+  cursor?: string
+}): Promise<{ items: Product[]; nextCursor: string | null }> {
+  const qs = new URLSearchParams()
+  if (params?.category) qs.set('category', params.category)
+  if (params?.seller_id) qs.set('seller_id', params.seller_id)
+  if (params?.per_page) qs.set('per_page', String(params.per_page))
+  if (params?.q) qs.set('q', params.q)
+  if (params?.scope) qs.set('scope', params.scope)
+  if (params?.country) qs.set('country', params.country)
+  if (params?.ships_to) qs.set('ships_to', params.ships_to)
+  if (params?.cursor) qs.set('cursor', params.cursor)
+  const str = qs.toString()
+  const { data, headers } = await requestWithHeaders<Product[]>(
+    `/products${str ? `?${str}` : ''}`,
+  )
+  return {
+    items: data,
+    nextCursor: headers.get('x-next-cursor'),
+  }
 }
 
 export async function getProduct(id: string): Promise<Product> {
@@ -523,6 +588,84 @@ export async function createUser(payload: CreateUserRequest): Promise<CreateUser
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+// ─── Token refresh ────────────────────────────────────────────────────────────
+
+export async function refreshAuthToken(): Promise<LoginResponse> {
+  const resp = await request<LoginResponse>('/auth/refresh', { method: 'POST' })
+  setToken(resp.token)
+  return resp
+}
+
+// ─── Order messages ───────────────────────────────────────────────────────────
+
+export interface OrderMessage {
+  id: string
+  order_id: string
+  sender_id: string
+  sender_name: string
+  sender_role: 'buyer' | 'seller'
+  body: string
+  sent_at: string
+}
+
+export async function getOrderMessages(orderId: string): Promise<OrderMessage[]> {
+  return request<OrderMessage[]>(`/orders/${orderId}/messages`)
+}
+
+export async function sendOrderMessage(
+  orderId: string,
+  body: string,
+): Promise<OrderMessage> {
+  return request<OrderMessage>(`/orders/${orderId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  })
+}
+
+// ─── Storefront ───────────────────────────────────────────────────────────────
+
+export interface StorefrontProduct {
+  id: string
+  title: string
+  price_kes: string
+  unit: string
+  quantity_avail: string
+  category: string
+  location_name: string
+  avg_rating: number | null
+  rating_count: number
+  primary_image_url: string | null
+  created_at: string
+}
+
+export interface StorefrontReview {
+  rating: number
+  review: string | null
+  buyer_name: string
+  created_at: string
+}
+
+export interface StorefrontResponse {
+  seller: {
+    id: string
+    name: string
+    location_name: string | null
+    member_since: string
+    product_count: number
+    confirmed_order_count: number
+  }
+  products: StorefrontProduct[]
+  rating_summary: {
+    avg_rating: number
+    rating_count: number
+    recent_reviews: StorefrontReview[]
+  }
+}
+
+export async function getStorefront(sellerId: string): Promise<StorefrontResponse> {
+  return request<StorefrontResponse>(`/storefront/${sellerId}`)
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

@@ -342,6 +342,8 @@ pub async fn create_order(
         .fetch_one(&state.db)
         .await?;
 
+    crate::metrics::record_order_created();
+
     Ok((StatusCode::CREATED, Json(order.into())))
 }
 
@@ -509,6 +511,18 @@ pub async fn update_order_status(
         .fetch_one(&state.db)
         .await?;
 
+    // When a buyer confirms delivery, trigger seller disbursement in the background.
+    // The order is already committed at this point; a payout failure must never
+    // roll back the confirmation or block the API response.
+    if body.status == "confirmed" {
+        crate::metrics::record_order_confirmed();
+        let sc = state.clone();
+        let order_id = id;
+        tokio::spawn(async move {
+            crate::mpesa::b2c::trigger_disbursement(sc, order_id).await;
+        });
+    }
+
     // Send a Nostr DM to the other party so they know the order changed.
     // We notify:
     //   - the buyer when the seller advances the order (processing, in_transit, delivered)
@@ -546,6 +560,35 @@ pub async fn update_order_status(
             tokio::spawn(async move {
                 nostr_dm::send_dm(&config, &pubkey, &msg).await;
             });
+        }
+    }
+
+    // SMS notification via Africa's Talking (best-effort, parallel to Nostr DM).
+    // Fetches the notify-party's phone from the DB and sends if AT is configured.
+    if let Some(sms_text) =
+        crate::notifications::sms::order_status_message(&body.status, &order.product_title)
+    {
+        let notify_id = if actor_is_seller {
+            order.buyer_id
+        } else {
+            order.seller_id
+        };
+
+        // Fetch phone number; a missing/null phone simply means no SMS is sent.
+        if let Ok(Some(phone_str)) = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT phone FROM farmers WHERE id = $1 AND deleted_at IS NULL",
+        )
+        .bind(notify_id)
+        .fetch_optional(&state.db)
+        .await
+        .map(|r| r.flatten())
+        {
+            crate::notifications::sms::send_background(
+                state.http.clone(),
+                state.config.clone(),
+                phone_str,
+                sms_text,
+            );
         }
     }
 

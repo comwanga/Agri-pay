@@ -12,7 +12,7 @@ use crate::farmers::handlers::normalize_phone;
 use crate::state::SharedState;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use rust_decimal::Decimal;
@@ -60,6 +60,57 @@ pub struct DarajaCallbackBody {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// ── Security: Safaricom Daraja IP allowlist ───────────────────────────────────
+//
+// Daraja's STK Push callbacks originate from Safaricom's known server IPs.
+// Accepting callbacks only from these addresses prevents external actors from
+// faking payment success by POSTing crafted payloads to our callback URL.
+//
+// Source: Safaricom Developer Portal (last updated 2024).
+// If a future Daraja migration adds new IPs, append them here.
+const SAFARICOM_IP_ALLOWLIST: &[&str] = &[
+    "196.201.214.200",
+    "196.201.214.206",
+    "196.201.213.114",
+    "196.201.214.207",
+    "196.201.214.208",
+    "196.201.213.44",
+    "196.201.212.127",
+    "196.201.212.138",
+    "196.201.212.129",
+    "196.201.212.136",
+    "196.201.212.74",
+    "196.201.212.69",
+];
+
+/// Extract the caller's best-effort IP from proxy-forwarded headers.
+/// We use the same trust order as TrustedIpExtractor in routes/mod.rs.
+fn extract_caller_ip(headers: &HeaderMap) -> Option<String> {
+    // CF-Connecting-IP or X-Real-IP (set by trusted proxies)
+    if let Some(ip) = headers
+        .get("CF-Connecting-IP")
+        .or_else(|| headers.get("X-Real-IP"))
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return Some(ip.to_string());
+    }
+    // Rightmost X-Forwarded-For entry (set by the nearest proxy)
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next_back())
+        .map(|s| s.trim().to_string())
+}
+
+/// Returns true if `ip` is in the Safaricom allowlist.
+/// When `MPESA_DISABLE_IP_FILTER=true` is set in the environment (for local
+/// development / ngrok tunnels), this check is bypassed with a loud warning.
+fn is_allowed_daraja_ip(ip: &str) -> bool {
+    SAFARICOM_IP_ALLOWLIST.contains(&ip)
+}
+
 /// Confirm M-Pesa is configured; return 503 with a clear message if not.
 fn require_mpesa(state: &SharedState) -> AppResult<&crate::mpesa::client::MpesaClient> {
     state.mpesa.as_ref().ok_or_else(|| {
@@ -99,7 +150,10 @@ pub async fn initiate_stk_push(
         product_title: String,
     }
     let order: Option<OrderInfo> = sqlx::query_as(
-        "SELECT buyer_id, seller_id, total_kes, status, product_title FROM orders WHERE id = $1",
+        "SELECT o.buyer_id, o.seller_id, o.total_kes, o.status, p.title AS product_title
+         FROM orders o
+         JOIN products p ON p.id = o.product_id
+         WHERE o.id = $1",
     )
     .bind(body.order_id)
     .fetch_optional(&state.db)
@@ -223,11 +277,46 @@ pub async fn initiate_stk_push(
 ///
 /// Daraja calls this endpoint when the buyer completes or dismisses the push.
 /// No JWT authentication — Safaricom's servers send this from their IP range.
-/// We verify structural integrity of the payload and idempotently update state.
+///
+/// Security controls applied (defence-in-depth):
+///   1. IP allowlist — only Safaricom's known server IPs are accepted.
+///      Set `MPESA_DISABLE_IP_FILTER=true` in .env to bypass for local dev / ngrok.
+///   2. Structural validation — JSON must deserialise into the expected envelope.
+///   3. Idempotency — checkout_request_id must exist in our DB, and must be pending.
 pub async fn mpesa_callback(
     State(state): State<SharedState>,
+    headers: HeaderMap,
     Json(envelope): Json<DarajaCallbackEnvelope>,
 ) -> StatusCode {
+    // ── IP allowlist ──────────────────────────────────────────────────────────
+    let bypass = std::env::var("MPESA_DISABLE_IP_FILTER")
+        .map(|v| v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    if !bypass {
+        let caller_ip = extract_caller_ip(&headers);
+        match caller_ip.as_deref() {
+            Some(ip) if is_allowed_daraja_ip(ip) => {
+                tracing::debug!(ip = %ip, "Daraja callback from allowed IP");
+            }
+            Some(ip) => {
+                tracing::warn!(
+                    ip = %ip,
+                    "Daraja callback rejected: IP not in Safaricom allowlist"
+                );
+                // Return 200 to avoid Daraja retrying indefinitely on a bad IP.
+                // The payment stays pending and will be caught by the expiry worker.
+                return StatusCode::OK;
+            }
+            None => {
+                tracing::warn!("Daraja callback rejected: could not determine caller IP");
+                return StatusCode::OK;
+            }
+        }
+    } else {
+        tracing::warn!("MPESA_DISABLE_IP_FILTER=true — Daraja IP allowlist bypassed (dev mode)");
+    }
+
     let cb = envelope.body.stk_callback;
 
     tracing::info!(
@@ -347,6 +436,7 @@ pub async fn mpesa_callback(
             );
         }
 
+        crate::metrics::record_stk_push_result(true);
         tracing::info!(
             order_id = %row.order_id,
             receipt = ?receipt,
@@ -373,6 +463,7 @@ pub async fn mpesa_callback(
         .execute(&state.db)
         .await;
 
+        crate::metrics::record_stk_push_result(false);
         tracing::info!(
             order_id = %row.order_id,
             result_code = %cb.result_code,

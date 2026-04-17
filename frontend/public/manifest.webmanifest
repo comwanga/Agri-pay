@@ -1,0 +1,34 @@
+{
+  "name": "SokoPay",
+  "short_name": "SokoPay",
+  "description": "Buy & sell agricultural products — pay with M-Pesa or Lightning",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#030712",
+  "theme_color": "#22c55e",
+  "lang": "en-KE",
+  "dir": "ltr",
+  "categories": ["shopping", "finance"],
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Browse",
+      "short_name": "Browse",
+      "description": "Browse the marketplace",
+      "url": "/"
+    },
+    {
+      "name": "Sell",
+      "short_name": "Sell",
+      "description": "Manage your listings",
+      "url": "/sell"
+    }
+  ]
+}

@@ -152,6 +152,8 @@ pub async fn open_dispute(
         );
     }
 
+    crate::metrics::record_dispute_opened();
+
     Ok(Json(serde_json::json!({
         "disputed": true,
         "order_id": order_id,
@@ -415,6 +417,7 @@ pub async fn resolve_dispute(
         );
     }
 
+    crate::metrics::record_dispute_resolved();
     tracing::info!(
         order_id = %order_id,
         resolution = %body.resolution,
@@ -469,13 +472,38 @@ pub async fn resolve_dispute(
         }
     }
 
-    // For refund_buyer: attempt an automatic Lightning refund in the background.
-    // We spawn this as a background task so the admin gets an immediate response
-    // rather than waiting on external HTTP calls to BTCPay and the buyer's wallet.
-    // The refund outcome is written back to the payments table — check
-    // payments.refund_status to see whether it completed or needs manual action.
-    if body.resolution == "refund_buyer" {
-        tokio::spawn(attempt_lightning_refund(state.clone(), order_id, now));
+    // Trigger money movement based on resolution — all in background tasks so
+    // the admin gets an immediate API response regardless of external call latency.
+    match body.resolution.as_str() {
+        "refund_buyer" => {
+            // Try Lightning refund first; falls back to manual if M-Pesa was used.
+            tokio::spawn(attempt_lightning_refund(state.clone(), order_id, now));
+            // Also queue an M-Pesa B2C refund for M-Pesa orders.
+            tokio::spawn(attempt_mpesa_refund_to_buyer(state.clone(), order_id));
+        }
+        "release_seller" => {
+            // Seller fulfilled the order — disburse their payment now.
+            tokio::spawn(crate::mpesa::b2c::trigger_disbursement(
+                state.clone(),
+                order_id,
+            ));
+        }
+        "split" => {
+            // Partial resolution: disburse to seller (admin handles buyer portion manually).
+            // A real 50/50 split would require two B2C calls and partial commission logic;
+            // for now we release full seller payout and note that the admin must manually
+            // refund 50% to the buyer via the portal.
+            tracing::info!(
+                order_id = %order_id,
+                "Dispute split: triggering seller disbursement — \
+                 admin must manually refund buyer's 50% via Safaricom portal"
+            );
+            tokio::spawn(crate::mpesa::b2c::trigger_disbursement(
+                state.clone(),
+                order_id,
+            ));
+        }
+        _ => {}
     }
 
     Ok(Json(serde_json::json!({
@@ -717,6 +745,128 @@ async fn attempt_lightning_refund(state: SharedState, order_id: Uuid, resolved_a
                 &format!("Network error sending refund: {}", e),
             )
             .await;
+        }
+    }
+}
+
+/// Attempt a direct M-Pesa B2C refund to the buyer's registered phone.
+///
+/// This runs in parallel with `attempt_lightning_refund`. For M-Pesa orders,
+/// only this path will succeed (the LN path exits early). For LN orders, this
+/// path will exit early because the buyer has no M-Pesa phone in the common case.
+///
+/// Errors are always logged, never propagated — the dispute is already resolved.
+async fn attempt_mpesa_refund_to_buyer(state: SharedState, order_id: Uuid) {
+    #[derive(sqlx::FromRow)]
+    struct RefundCtx {
+        total_kes: Decimal,
+        payment_method: Option<String>,
+        buyer_phone: Option<String>,
+        #[allow(dead_code)]
+        buyer_name: String,
+    }
+
+    let ctx: Option<RefundCtx> = sqlx::query_as(
+        "SELECT o.total_kes,
+                o.payment_method,
+                f.mpesa_phone   AS buyer_phone,
+                f.name          AS buyer_name
+         FROM orders o
+         JOIN farmers f ON f.id = o.buyer_id
+         WHERE o.id = $1",
+    )
+    .bind(order_id)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
+
+    let ctx = match ctx {
+        Some(c) => c,
+        None => {
+            tracing::error!(order_id = %order_id, "M-Pesa refund: order not found");
+            return;
+        }
+    };
+
+    // Only run for M-Pesa orders
+    if ctx.payment_method.as_deref() != Some("mpesa") {
+        return;
+    }
+
+    let phone = match ctx.buyer_phone.as_deref().filter(|s| !s.is_empty()) {
+        Some(p) => p.to_string(),
+        None => {
+            tracing::warn!(
+                order_id = %order_id,
+                "M-Pesa refund: buyer has no M-Pesa phone on file — manual action required"
+            );
+            return;
+        }
+    };
+
+    let (initiator, credential, result_url, timeout_url) = match (
+        state.config.mpesa_b2c_initiator_name.as_deref(),
+        state.config.mpesa_b2c_security_credential.as_deref(),
+        state.config.mpesa_b2c_result_url.as_deref(),
+        state.config.mpesa_b2c_timeout_url.as_deref(),
+    ) {
+        (Some(i), Some(c), Some(r), Some(t)) => (i, c, r, t),
+        _ => {
+            tracing::warn!(order_id = %order_id, "M-Pesa refund: B2C not configured — manual action required");
+            return;
+        }
+    };
+
+    let mpesa = match state.mpesa.as_ref() {
+        Some(c) => c,
+        None => {
+            tracing::warn!(order_id = %order_id, "M-Pesa refund: client not initialised");
+            return;
+        }
+    };
+
+    use rust_decimal::prelude::ToPrimitive;
+    let amount_u64 = match ctx.total_kes.floor().to_u64() {
+        Some(a) if a > 0 => a,
+        _ => {
+            tracing::warn!(order_id = %order_id, "M-Pesa refund: invalid amount");
+            return;
+        }
+    };
+
+    let occasion = format!(
+        "SokoPay refund {}",
+        &order_id.to_string()[..8].to_uppercase()
+    );
+
+    match mpesa
+        .b2c_pay(
+            &phone,
+            amount_u64,
+            initiator,
+            credential,
+            result_url,
+            timeout_url,
+            &occasion,
+        )
+        .await
+    {
+        Ok(b2c) => {
+            tracing::info!(
+                order_id        = %order_id,
+                conversation_id = %b2c.conversation_id,
+                amount_kes      = %amount_u64,
+                buyer_phone     = %phone,
+                "M-Pesa refund B2C initiated"
+            );
+        }
+        Err(e) => {
+            tracing::error!(
+                order_id   = %order_id,
+                error      = %e,
+                "M-Pesa refund B2C failed — manual action required"
+            );
         }
     }
 }
