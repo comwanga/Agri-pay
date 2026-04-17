@@ -95,9 +95,11 @@ export default function LightningInvoiceCard({
   }, [invoice.expires_at])
 
   // ── Exchange rate ──────────────────────────────────────────────────────────
+  // Use the same key as Layout.tsx so both components share one cached response
+  // and no extra oracle request fires when the invoice card is mounted.
   const { data: rate } = useQuery({
-    queryKey: ['rate', 'KES'],
-    queryFn: () => getRate('KES'),
+    queryKey: ['rate'],
+    queryFn: () => getRate(),
     staleTime: 30_000,
     refetchInterval: 60_000,
   })

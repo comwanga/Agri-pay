@@ -12,8 +12,16 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
-      retry: 2,
-      refetchOnWindowFocus: true,
+      // Don't retry 4xx client errors — they won't self-heal and retrying
+      // 429 responses makes the rate-limit cascade exponentially worse.
+      retry: (failureCount, error) => {
+        if (error instanceof Error && /^HTTP 4/.test(error.message)) return false
+        return failureCount < 2
+      },
+      // Refetching on window focus creates a burst when the user switches back
+      // from DevTools (or any other window): every mounted query fires at once
+      // against the same IP, easily exceeding the server's burst limit.
+      refetchOnWindowFocus: false,
     },
   },
 })
