@@ -2,18 +2,18 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, MapPin, Package, Truck, Zap, QrCode,
-  CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Copy, Check,
+  ArrowLeft, MapPin, Package, Truck, Zap,
+  CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Check,
   Smartphone, Loader2, ShoppingCart,
 } from 'lucide-react'
-import { QRCodeSVG } from 'qrcode.react'
 import {
   getProduct, getOrder, createOrder, createInvoice, confirmPayment,
-  updateOrderStatus, payWithWebLN, hasWebLN, formatKes, formatSats,
+  updateOrderStatus, payWithWebLN, hasWebLN, formatKes,
   rateProduct, initiateMpesaPay, getMpesaPaymentStatus,
 } from '../api/client.ts'
 import { useAuth } from '../context/auth.tsx'
 import { useCart } from '../context/cart.tsx'
+import LightningInvoiceCard from './LightningInvoiceCard.tsx'
 import StarRating from './StarRating.tsx'
 import clsx from 'clsx'
 
@@ -43,7 +43,6 @@ export default function ProductDetail() {
   const [invoice, setInvoice] = useState<{
     payment_id: string; bolt11: string; amount_sats: number; expires_at: string
   } | null>(null)
-  const [invoiceSecsLeft, setInvoiceSecsLeft] = useState(60)
   const [invoiceExpired, setInvoiceExpired] = useState(false)
   const [payError, setPayError] = useState<string | null>(null)
   const [preimage, setPreimage] = useState('')
@@ -92,21 +91,6 @@ export default function ProductDetail() {
 
     return () => clearInterval(interval)
   }, [buyStep, mpesaCheckoutId, qc])
-
-  // ── Countdown timer while Lightning invoice is showing ───────────────────────
-  useEffect(() => {
-    if (buyStep !== 'invoice' || !invoice) return
-    const expiresAt = new Date(invoice.expires_at).getTime()
-
-    const tick = () => {
-      const secs = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000))
-      setInvoiceSecsLeft(secs)
-      if (secs === 0) setInvoiceExpired(true)
-    }
-    tick()
-    const timerId = setInterval(tick, 1000)
-    return () => clearInterval(timerId)
-  }, [buyStep, invoice])
 
   // ── Poll order status while Lightning invoice is active (BTCPay auto-settle) ─
   // When the buyer scans and pays, BTCPay fires a webhook that advances the order
@@ -160,7 +144,6 @@ export default function ProductDetail() {
         expires_at: inv.expires_at,
       })
       setInvoiceExpired(false)
-      setInvoiceSecsLeft(60)
       setBuyStep('invoice')
     },
     onError: (e: Error) => {
@@ -284,7 +267,6 @@ export default function ProductDetail() {
     setOrderId(null)
     setInvoice(null)
     setInvoiceExpired(false)
-    setInvoiceSecsLeft(60)
     setPreimage('')
     setPayError(null)
     setMpesaCheckoutId(null)
@@ -711,154 +693,25 @@ export default function ProductDetail() {
 
           {/* Step: show Lightning invoice */}
           {buyStep === 'invoice' && invoice && (
-            <div className="card p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-gray-100">Pay Invoice</h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-brand-400">{formatSats(invoice.amount_sats)}</span>
-                  {/* Countdown badge */}
-                  {!invoiceExpired ? (
-                    <span className={clsx(
-                      'text-xs font-mono px-2 py-0.5 rounded-full',
-                      invoiceSecsLeft > 20
-                        ? 'bg-green-900/30 text-green-400'
-                        : invoiceSecsLeft > 10
-                          ? 'bg-yellow-900/30 text-yellow-400'
-                          : 'bg-red-900/30 text-red-400 animate-pulse',
-                    )}>
-                      {invoiceSecsLeft}s
-                    </span>
-                  ) : (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-900/30 text-red-400">
-                      Expired
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Expired overlay */}
-              {invoiceExpired && (
-                <div className="bg-gray-800/80 rounded-xl p-4 text-center space-y-3">
-                  <p className="text-sm text-gray-300 font-medium">Invoice expired</p>
-                  <p className="text-xs text-gray-500">
-                    The rate was locked for 60 seconds. Get a fresh invoice at the current rate.
-                  </p>
-                  <button
-                    onClick={refreshInvoice}
-                    disabled={getLightningInvoice.isPending}
-                    className="btn-primary mx-auto"
-                  >
-                    {getLightningInvoice.isPending
-                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Getting new invoice…</>
-                      : <><Zap className="w-4 h-4" /> Get New Invoice</>}
-                  </button>
-                </div>
-              )}
-
-              {/* QR + controls — hidden while expired */}
-              {!invoiceExpired && (<>
-
-              <div className="flex justify-center p-4 bg-white rounded-xl">
-                <QRCodeSVG
-                  value={invoice.bolt11.toUpperCase()}
-                  size={200}
-                  level="H"
-                  imageSettings={{
-                    src: '/logo.svg',
-                    width: 44,
-                    height: 44,
-                    excavate: true,
-                  }}
-                />
-              </div>
-
-              <div className="flex items-center gap-2 bg-gray-800 rounded-lg p-2">
-                <p className="text-[10px] text-gray-400 font-mono break-all flex-1 leading-relaxed">
-                  {invoice.bolt11.slice(0, 44)}…
-                </p>
-                <button onClick={copyBolt11} className="text-brand-400 hover:text-brand-300 shrink-0">
-                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <QrCode className="w-3.5 h-3.5 shrink-0" />
-                Scan with any Lightning wallet, then paste the preimage below to confirm.
-              </div>
-
-              {hasWebLN && (
-                <button
-                  onClick={() => payWebLN.mutate()}
-                  disabled={payWebLN.isPending}
-                  className="btn-primary w-full justify-center"
-                >
-                  <Zap className="w-4 h-4" />
-                  {payWebLN.isPending ? 'Paying…' : 'Pay with Fedi / WebLN'}
-                </button>
-              )}
-
-              {/* Manual preimage confirmation for external wallets */}
-              <div className="space-y-1.5 border-t border-gray-700 pt-3">
-                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                  Paid with another wallet?
-                </p>
-                <label className="text-[11px] text-gray-500">
-                  Paste the payment preimage (hex) from your wallet's payment details:
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="64-char hex preimage…"
-                    value={preimage}
-                    onChange={e => setPreimage(e.target.value)}
-                    className="input-base font-mono text-xs flex-1"
-                  />
-                  <button
-                    onClick={handleManualConfirm}
-                    disabled={confirming || !/^[0-9a-f]{64}$/i.test(preimage.replace(/\s+/g, ''))}
-                    className="btn-primary px-3 shrink-0"
-                  >
-                    {confirming ? '…' : 'Confirm'}
-                  </button>
-                </div>
-                {preimage.length > 0 && !/^[0-9a-f]{64}$/i.test(preimage.replace(/\s+/g, '')) && (
-                  <p className="text-[11px] text-yellow-500">
-                    {preimage.replace(/\s+/g, '').length}/64 hex chars
-                  </p>
-                )}
-              </div>
-
-              {/* In-person / cash pickup */}
-              <div className="space-y-2 border-t border-gray-700 pt-3">
-                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                  Collecting in person?
-                </p>
-                <p className="text-[11px] text-gray-500 leading-relaxed">
-                  If you're meeting the seller directly and have received your goods, confirm receipt here. No preimage needed.
-                </p>
-                <button
-                  onClick={handleInPersonConfirm}
-                  disabled={confirming}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-mpesa/20 border border-mpesa/30 text-mpesa hover:bg-mpesa/30 transition-colors disabled:opacity-50"
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  {confirming ? 'Confirming…' : 'I received my goods'}
-                </button>
-              </div>
-
-              {payError && (
-                <p className="text-xs text-red-400 bg-red-900/20 border border-red-700/30 rounded-lg px-3 py-2">
-                  {payError}
-                </p>
-              )}
-              </>)}
-
-              <button
-                onClick={resetBuy}
-                className="btn-secondary w-full justify-center text-sm"
-              >
-                Cancel
-              </button>
+            <div className="card p-4">
+              <LightningInvoiceCard
+                invoice={invoice}
+                onExpired={() => setInvoiceExpired(true)}
+                onCopy={copyBolt11}
+                onWebLN={() => payWebLN.mutate()}
+                onManualConfirm={handleManualConfirm}
+                onInPersonConfirm={handleInPersonConfirm}
+                onRefresh={refreshInvoice}
+                onCancel={resetBuy}
+                setPreimage={setPreimage}
+                copied={copied}
+                confirming={confirming}
+                preimage={preimage}
+                payError={payError}
+                hasWebLN={hasWebLN}
+                isWebLNPaying={payWebLN.isPending}
+                isRefreshing={getLightningInvoice.isPending}
+              />
             </div>
           )}
 
