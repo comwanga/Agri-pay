@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Package, ChevronDown, ChevronUp, ThumbsUp, AlertTriangle,
-  XCircle, Zap, QrCode, Copy, Check, CheckCircle, FileText, Send,
+  XCircle, Zap, CheckCircle, FileText, Send,
   Smartphone, Loader2,
 } from 'lucide-react'
-import { QRCodeSVG } from 'qrcode.react'
+import LightningInvoiceCard from './LightningInvoiceCard.tsx'
 import {
   listOrders, updateOrderStatus, cancelOrder, createInvoice, confirmPayment,
   payWithWebLN, hasWebLN, formatKes, formatSats, ORDER_STATUS_LABELS,
@@ -130,9 +130,21 @@ function MpesaPayPanel({ order, onPaid }: { order: Order; onPaid: () => void }) 
 
 // ── Lightning payment panel ───────────────────────────────────────────────────
 
-function LightningPayPanel({ order, onPaid }: { order: Order; onPaid: () => void }) {
-  const [bolt11, setBolt11] = useState<string | null>(null)
-  const [paymentId, setPaymentId] = useState<string | null>(null)
+interface InvoiceData {
+  payment_id: string
+  bolt11: string
+  amount_sats: number
+  expires_at: string
+}
+
+function LightningPayPanel({
+  order, onPaid, onInPersonConfirm,
+}: {
+  order: Order
+  onPaid: () => void
+  onInPersonConfirm: () => void
+}) {
+  const [invoice, setInvoice] = useState<InvoiceData | null>(null)
   const [preimage, setPreimage] = useState('')
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -140,15 +152,23 @@ function LightningPayPanel({ order, onPaid }: { order: Order; onPaid: () => void
 
   const getInvoice = useMutation({
     mutationFn: () => createInvoice(order.id),
-    onSuccess: inv => { setBolt11(inv.bolt11); setPaymentId(inv.payment_id); setError(null) },
+    onSuccess: inv => {
+      setInvoice({
+        payment_id: inv.payment_id,
+        bolt11: inv.bolt11,
+        amount_sats: inv.amount_sats,
+        expires_at: inv.expires_at,
+      })
+      setError(null)
+    },
     onError: (e: Error) => setError(e.message),
   })
 
   const payFedi = useMutation({
     mutationFn: async () => {
-      if (!bolt11 || !paymentId) throw new Error('No invoice')
-      const pre = await payWithWebLN(bolt11)
-      await confirmPayment(paymentId, pre)
+      if (!invoice) throw new Error('No invoice')
+      const pre = await payWithWebLN(invoice.bolt11)
+      await confirmPayment(invoice.payment_id, pre)
     },
     onSuccess: onPaid,
     onError: (e: Error) => setError(e.message),
@@ -156,14 +176,14 @@ function LightningPayPanel({ order, onPaid }: { order: Order; onPaid: () => void
 
   async function handleManualConfirm() {
     const cleaned = preimage.replace(/\s+/g, '').toLowerCase()
-    if (!paymentId || cleaned.length !== 64 || !/^[0-9a-f]{64}$/.test(cleaned)) {
+    if (!invoice || cleaned.length !== 64 || !/^[0-9a-f]{64}$/.test(cleaned)) {
       setError('Paste the 64-character hex preimage from your Lightning wallet.')
       return
     }
     setConfirming(true)
     setError(null)
     try {
-      await confirmPayment(paymentId, cleaned)
+      await confirmPayment(invoice.payment_id, cleaned)
       onPaid()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Confirmation failed')
@@ -173,13 +193,21 @@ function LightningPayPanel({ order, onPaid }: { order: Order; onPaid: () => void
   }
 
   function copyBolt11() {
-    if (bolt11) { navigator.clipboard.writeText(bolt11); setCopied(true); setTimeout(() => setCopied(false), 2000) }
+    if (invoice) {
+      navigator.clipboard.writeText(invoice.bolt11)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
 
-  if (!bolt11) {
+  if (!invoice) {
     return (
       <div className="space-y-2">
-        {error && <p className="text-xs text-red-400 bg-red-900/20 border border-red-700/30 rounded-lg px-3 py-2">{error}</p>}
+        {error && (
+          <p className="text-xs text-red-400 bg-red-900/20 border border-red-700/30 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
         <button
           onClick={() => getInvoice.mutate()}
           disabled={getInvoice.isPending}
@@ -193,63 +221,24 @@ function LightningPayPanel({ order, onPaid }: { order: Order; onPaid: () => void
   }
 
   return (
-    <div className="space-y-3 bg-gray-800/60 rounded-xl p-4">
-      <p className="text-xs font-semibold text-gray-300">Pay with Lightning</p>
-
-      <div className="flex justify-center p-3 bg-white rounded-xl">
-        <QRCodeSVG value={bolt11.toUpperCase()} size={160} />
-      </div>
-
-      <div className="flex items-center gap-2 bg-gray-900 rounded-lg p-2">
-        <p className="text-[10px] font-mono text-gray-400 break-all flex-1 leading-relaxed">
-          {bolt11.slice(0, 44)}…
-        </p>
-        <button onClick={copyBolt11} className="shrink-0 text-brand-400 hover:text-brand-300">
-          {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-        </button>
-      </div>
-
-      <div className="flex items-center gap-2 text-xs text-gray-500">
-        <QrCode className="w-3.5 h-3.5 shrink-0" />
-        Scan with any Lightning wallet, then paste the preimage below.
-      </div>
-
-      {hasWebLN && (
-        <button
-          onClick={() => payFedi.mutate()}
-          disabled={payFedi.isPending}
-          className="btn-primary w-full justify-center text-sm"
-        >
-          <Zap className="w-4 h-4" />
-          {payFedi.isPending ? 'Paying…' : 'Pay with Fedi / WebLN'}
-        </button>
-      )}
-
-      <div className="space-y-1 border-t border-gray-700 pt-3">
-        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Paid externally?</p>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="64-char hex preimage…"
-            value={preimage}
-            onChange={e => setPreimage(e.target.value)}
-            className="input-base font-mono text-xs flex-1"
-          />
-          <button
-            onClick={handleManualConfirm}
-            disabled={confirming || !/^[0-9a-f]{64}$/i.test(preimage.replace(/\s+/g, ''))}
-            className="btn-primary px-3 shrink-0 text-sm"
-          >
-            {confirming ? '…' : 'Confirm'}
-          </button>
-        </div>
-        {preimage.length > 0 && !/^[0-9a-f]{64}$/i.test(preimage.replace(/\s+/g, '')) && (
-          <p className="text-[11px] text-yellow-500">{preimage.replace(/\s+/g, '').length}/64 hex chars</p>
-        )}
-      </div>
-
-      {error && <p className="text-xs text-red-400 bg-red-900/20 border border-red-700/30 rounded-lg px-3 py-2">{error}</p>}
-    </div>
+    <LightningInvoiceCard
+      invoice={invoice}
+      onExpired={() => {/* expiry handled inside the card; parent doesn't need to act */}}
+      onCopy={copyBolt11}
+      onWebLN={() => payFedi.mutate()}
+      onManualConfirm={handleManualConfirm}
+      onInPersonConfirm={onInPersonConfirm}
+      onRefresh={() => getInvoice.mutate()}
+      onCancel={() => setInvoice(null)}
+      setPreimage={setPreimage}
+      copied={copied}
+      confirming={confirming}
+      preimage={preimage}
+      payError={error}
+      hasWebLN={hasWebLN}
+      isWebLNPaying={payFedi.isPending}
+      isRefreshing={getInvoice.isPending}
+    />
   )
 }
 
@@ -302,24 +291,26 @@ function PayPanel({ order, onPaid }: { order: Order; onPaid: () => void }) {
 
       {method === 'mpesa'
         ? <MpesaPayPanel order={order} onPaid={onPaid} />
-        : <LightningPayPanel order={order} onPaid={onPaid} />}
+        : <LightningPayPanel order={order} onPaid={onPaid} onInPersonConfirm={handleInPerson} />}
 
-      {/* In-person pickup — always available */}
-      <div className="space-y-2 border-t border-gray-700 pt-3">
-        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Collecting in person?</p>
-        <p className="text-[11px] text-gray-500 leading-relaxed">
-          Already received your goods directly from the seller? Confirm here — no payment needed.
-        </p>
-        <button
-          onClick={handleInPerson}
-          disabled={confirming}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-mpesa/20 border border-mpesa/30 text-mpesa hover:bg-mpesa/30 transition-colors disabled:opacity-50"
-        >
-          <CheckCircle className="w-4 h-4" />
-          {confirming ? 'Confirming…' : 'I received my goods'}
-        </button>
-        {error && <p className="text-xs text-red-400">{error}</p>}
-      </div>
+      {/* In-person pickup — shown on M-Pesa tab only; Lightning card has its own section */}
+      {method === 'mpesa' && (
+        <div className="space-y-2 border-t border-gray-700 pt-3">
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Collecting in person?</p>
+          <p className="text-[11px] text-gray-500 leading-relaxed">
+            Already received your goods directly from the seller? Confirm here — no payment needed.
+          </p>
+          <button
+            onClick={handleInPerson}
+            disabled={confirming}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-mpesa/20 border border-mpesa/30 text-mpesa hover:bg-mpesa/30 transition-colors disabled:opacity-50"
+          >
+            <CheckCircle className="w-4 h-4" />
+            {confirming ? 'Confirming…' : 'I received my goods'}
+          </button>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+        </div>
+      )}
     </div>
   )
 }

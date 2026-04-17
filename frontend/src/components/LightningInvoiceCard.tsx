@@ -211,6 +211,15 @@ export default function LightningInvoiceCard({
       </div>
 
       {/* ── QR code ─────────────────────────────────────────────────────────── */}
+      {/*
+        Logo overlay uses CSS absolute positioning rather than QRCodeSVG's
+        imageSettings / excavate approach. SVG-in-SVG via <image href> is
+        unreliable across browsers and screenshot renderers: the excavation
+        (blank modules) may appear but the image silently fails to paint.
+        A regular <img> element positioned over the QR works everywhere.
+        level="H" keeps 30% error-correction headroom so scanners handle
+        the logo obscuring the centre modules.
+      */}
       <div
         className={clsx(
           'relative flex justify-center p-5 bg-white rounded-2xl border-4 transition-colors duration-700',
@@ -221,13 +230,13 @@ export default function LightningInvoiceCard({
           value={invoice.bolt11.toUpperCase()}
           size={220}
           level="H"
-          imageSettings={{
-            src: '/logo.svg',
-            width: 52,
-            height: 52,
-            excavate: true,
-          }}
         />
+        {/* Centred logo — absolutely positioned over the QR */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="w-14 h-14 rounded-xl overflow-hidden bg-white shadow-sm ring-2 ring-white">
+            <img src="/logo.svg" alt="SokoPay" className="w-full h-full" draggable={false} />
+          </div>
+        </div>
       </div>
 
       {/* ── Rate stamp ──────────────────────────────────────────────────────── */}
