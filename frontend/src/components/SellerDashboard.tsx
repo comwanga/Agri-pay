@@ -7,6 +7,10 @@ import {
   ShoppingBag, TrendingUp,
 } from 'lucide-react'
 import {
+  ResponsiveContainer, AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+} from 'recharts'
+import {
   listProducts, listOrders, updateProduct, deleteProduct,
   updateOrderStatus, formatKes, ORDER_STATUS_LABELS, sellerNextStatus,
   getFarmerAnalytics, getSellerRatings,
@@ -498,56 +502,96 @@ export default function SellerDashboard() {
                 </div>
               </div>
 
-              {/* Top Products */}
-              {analyticsQuery.data.top_products.length > 0 && (
-                <div className="card overflow-hidden">
-                  <div className="px-4 py-3 border-b border-gray-800">
-                    <h3 className="text-sm font-semibold text-gray-200">Top Products by Revenue</h3>
+              {/* Top Products bar chart */}
+              {analyticsQuery.data.top_products.length > 0 && (() => {
+                const maxRev = Math.max(...analyticsQuery.data.top_products.map(p => parseFloat(p.revenue_kes)))
+                return (
+                  <div className="card p-4 space-y-3">
+                    <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+                      <ShoppingBag className="w-4 h-4 text-brand-400" />
+                      Top Products by Revenue
+                    </h3>
+                    <div className="space-y-2.5">
+                      {analyticsQuery.data.top_products.map(p => {
+                        const rev = parseFloat(p.revenue_kes)
+                        const pct = maxRev > 0 ? (rev / maxRev) * 100 : 0
+                        return (
+                          <div key={p.product_id} className="space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-gray-200 truncate max-w-[55%]">{p.title}</span>
+                              <span className="text-brand-400 font-semibold tabular-nums">{formatKes(p.revenue_kes)}</span>
+                            </div>
+                            <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-brand-500 rounded-full transition-all duration-500"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <p className="text-[10px] text-gray-600">
+                              {parseFloat(p.units_sold).toLocaleString()} units · {p.order_count} order{p.order_count !== 1 ? 's' : ''}
+                            </p>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-800">
-                        <th className="text-left text-xs font-medium text-gray-500 px-4 py-2">Product</th>
-                        <th className="text-right text-xs font-medium text-gray-500 px-4 py-2">Units Sold</th>
-                        <th className="text-right text-xs font-medium text-gray-500 px-4 py-2">Revenue</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {analyticsQuery.data.top_products.map(p => (
-                        <tr key={p.product_id} className="border-b border-gray-800/50 last:border-0">
-                          <td className="px-4 py-2.5 text-gray-200 truncate max-w-[160px]">{p.title}</td>
-                          <td className="px-4 py-2.5 text-right text-gray-400">
-                            {parseFloat(p.units_sold).toLocaleString()}
-                          </td>
-                          <td className="px-4 py-2.5 text-right text-brand-400 font-medium">
-                            {formatKes(p.revenue_kes)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                )
+              })()}
 
-              {/* Monthly Revenue */}
-              {analyticsQuery.data.monthly_revenue.length > 0 && (
-                <div className="card overflow-hidden">
-                  <div className="px-4 py-3 border-b border-gray-800">
-                    <h3 className="text-sm font-semibold text-gray-200">Monthly Revenue (Last 6 Months)</h3>
+              {/* Revenue area chart */}
+              {analyticsQuery.data.monthly_revenue.length > 0 && (() => {
+                const chartData = analyticsQuery.data.monthly_revenue.map(m => ({
+                  month: m.month.slice(0, 7), // "2026-04"
+                  revenue: parseFloat(m.revenue_kes),
+                  orders: m.order_count,
+                }))
+                return (
+                  <div className="card p-4 space-y-3">
+                    <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-brand-400" />
+                      Revenue &amp; Orders (Last 6 Months)
+                    </h3>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                        <defs>
+                          <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#d97b18" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#d97b18" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 10 }} />
+                        <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
+                        <Tooltip
+                          contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 8 }}
+                          labelStyle={{ color: '#e5e7eb', fontSize: 12 }}
+                          formatter={(v: number, name: string) => [
+                            name === 'revenue' ? `KES ${v.toLocaleString()}` : v,
+                            name === 'revenue' ? 'Revenue' : 'Orders',
+                          ]}
+                        />
+                        <Legend formatter={v => v === 'revenue' ? 'Revenue (KES)' : 'Orders'} wrapperStyle={{ fontSize: 11 }} />
+                        <Area type="monotone" dataKey="revenue" stroke="#d97b18" fill="url(#revGrad)" strokeWidth={2} dot={false} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+
+                    {/* Order count bar chart */}
+                    <ResponsiveContainer width="100%" height={100}>
+                      <BarChart data={chartData} margin={{ top: 0, right: 4, bottom: 0, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                        <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 10 }} />
+                        <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} allowDecimals={false} width={24} />
+                        <Tooltip
+                          contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 8 }}
+                          labelStyle={{ color: '#e5e7eb', fontSize: 12 }}
+                          formatter={(v: number) => [v, 'Orders']}
+                        />
+                        <Bar dataKey="orders" fill="#4ade80" radius={[3, 3, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
-                  <div className="divide-y divide-gray-800/50">
-                    {analyticsQuery.data.monthly_revenue.map(m => (
-                      <div key={m.month} className="flex items-center justify-between px-4 py-3">
-                        <div>
-                          <p className="text-sm text-gray-200">{m.month}</p>
-                          <p className="text-xs text-gray-500">{m.order_count} order{m.order_count !== 1 ? 's' : ''}</p>
-                        </div>
-                        <p className="text-sm font-semibold text-brand-400">{formatKes(m.revenue_kes)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* Recent Orders */}
               {analyticsQuery.data.recent_orders.length > 0 && (
