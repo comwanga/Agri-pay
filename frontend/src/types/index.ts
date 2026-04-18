@@ -52,6 +52,7 @@ export interface Product {
   id: string
   seller_id: string
   seller_name: string
+  seller_verified: boolean
   title: string
   description: string
   price_kes: string   // Decimal as string

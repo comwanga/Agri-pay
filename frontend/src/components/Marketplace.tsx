@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Search, MapPin, Package, Globe, ChevronDown, Loader2, ShoppingCart, Check, SlidersHorizontal, X, ArrowUpDown } from 'lucide-react'
+import { Search, MapPin, Package, Globe, ChevronDown, Loader2, ShoppingCart, Check, SlidersHorizontal, X, ArrowUpDown, BadgeCheck } from 'lucide-react'
 import { listProductsPage, formatKes } from '../api/client.ts'
 import { PRODUCT_CATEGORIES, CATEGORY_ICONS } from '../types'
 import { useTranslation } from '../i18n/index.tsx'
@@ -106,7 +106,12 @@ function ProductCard({ product }: { product: Product }) {
         )}
 
         <div className="flex items-center justify-between text-xs text-gray-500 mt-auto pt-2">
-          <span className="font-medium text-gray-400">{product.seller_name}</span>
+          <span className="font-medium text-gray-400 flex items-center gap-1">
+            {product.seller_name}
+            {product.seller_verified && (
+              <BadgeCheck className="w-3.5 h-3.5 text-brand-400 shrink-0" />
+            )}
+          </span>
           {product.location_name && (
             <span className="flex items-center gap-1">
               <MapPin className="w-3 h-3" />

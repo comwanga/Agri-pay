@@ -39,6 +39,7 @@ pub struct Product {
     pub id: Uuid,
     pub seller_id: Uuid,
     pub seller_name: String,
+    pub seller_verified: bool,
     pub title: String,
     pub description: String,
     pub price_kes: Decimal,
@@ -63,6 +64,7 @@ struct ProductRow {
     id: Uuid,
     seller_id: Uuid,
     seller_name: String,
+    seller_verified: bool,
     title: String,
     description: String,
     price_kes: Decimal,
@@ -209,6 +211,7 @@ async fn fetch_images(
 async fn fetch_product(pool: &sqlx::PgPool, product_id: Uuid) -> AppResult<Product> {
     let row: Option<ProductRow> = sqlx::query_as(
         "SELECT p.id, p.seller_id, f.name AS seller_name,
+                (f.verified_at IS NOT NULL) AS seller_verified,
                 p.title, p.description, p.price_kes, p.unit,
                 p.quantity_avail, p.category, p.status,
                 p.location_name, p.country_code, p.currency_code,
@@ -240,6 +243,7 @@ fn row_to_product(row: ProductRow, images: Vec<ProductImage>) -> Product {
         id: row.id,
         seller_id: row.seller_id,
         seller_name: row.seller_name,
+        seller_verified: row.seller_verified,
         title: row.title,
         description: row.description,
         price_kes: row.price_kes,
@@ -383,6 +387,7 @@ pub async fn list_products(
 
     let base_select = "
         SELECT p.id, p.seller_id, f.name AS seller_name,
+               (f.verified_at IS NOT NULL) AS seller_verified,
                p.title, p.description, p.price_kes, p.unit,
                p.quantity_avail, p.category, p.status,
                p.location_name, p.country_code, p.currency_code,

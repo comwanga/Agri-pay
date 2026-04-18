@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, MapPin, Package, Truck, Zap,
   CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Check,
-  Smartphone, Loader2, ShoppingCart,
+  Smartphone, Loader2, ShoppingCart, BadgeCheck,
 } from 'lucide-react'
 import {
   getProduct, getOrder, createOrder, createInvoice, confirmPayment,
@@ -384,7 +384,15 @@ export default function ProductDetail() {
           </div>
 
           <div className="space-y-1 text-sm text-gray-400">
-            <p>Sold by <span className="text-gray-200 font-medium">{product.seller_name}</span></p>
+            <p className="flex items-center gap-1.5 flex-wrap">
+              Sold by <span className="text-gray-200 font-medium">{product.seller_name}</span>
+              {product.seller_verified && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-400 bg-brand-500/10 border border-brand-500/20 px-1.5 py-0.5 rounded-full">
+                  <BadgeCheck className="w-3 h-3" />
+                  Verified
+                </span>
+              )}
+            </p>
             {product.location_name && (
               <p className="flex items-center gap-1">
                 <MapPin className="w-3.5 h-3.5" />

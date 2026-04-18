@@ -50,6 +50,7 @@ pub struct Farmer {
     pub ln_address: Option<String>,
     pub mpesa_phone: Option<String>,
     pub location_name: Option<String>,
+    pub verified_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -85,7 +86,7 @@ pub async fn list_farmers(
     }
 
     let farmers: Vec<Farmer> = sqlx::query_as(
-        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, created_at
+        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, verified_at, created_at
          FROM farmers WHERE deleted_at IS NULL ORDER BY created_at DESC",
     )
     .fetch_all(&state.db)
@@ -151,7 +152,7 @@ pub async fn create_farmer(
     .await?;
 
     let farmer: Farmer = sqlx::query_as(
-        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, created_at
+        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, verified_at, created_at
          FROM farmers WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(id)
@@ -172,7 +173,7 @@ pub async fn get_farmer(
     }
 
     let farmer: Option<Farmer> = sqlx::query_as(
-        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, created_at
+        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, verified_at, created_at
          FROM farmers WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(id)
@@ -305,7 +306,7 @@ pub async fn update_farmer(
     .await?;
 
     let farmer: Farmer = sqlx::query_as(
-        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, created_at
+        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, verified_at, created_at
          FROM farmers WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(id)
@@ -555,6 +556,52 @@ pub async fn get_farmer_analytics(
         recent_orders,
         monthly_revenue,
     }))
+}
+
+/// POST /api/farmers/:id/verify  (admin only)
+/// Sets or clears the verification badge for a seller.
+pub async fn verify_farmer(
+    State(state): State<SharedState>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+    Json(body): Json<VerifyFarmerRequest>,
+) -> AppResult<Json<Farmer>> {
+    if claims.role != Role::Admin {
+        return Err(AppError::Forbidden("Admin only".into()));
+    }
+
+    let rows = sqlx::query(
+        "UPDATE farmers SET
+            verified_at       = CASE WHEN $2 THEN NOW() ELSE NULL END,
+            verification_note = $3
+         WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(id)
+    .bind(body.verified)
+    .bind(body.note.as_deref())
+    .execute(&state.db)
+    .await?
+    .rows_affected();
+
+    if rows == 0 {
+        return Err(AppError::NotFound(format!("Farmer {} not found", id)));
+    }
+
+    let farmer: Farmer = sqlx::query_as(
+        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, verified_at, created_at
+         FROM farmers WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(id)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(farmer))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyFarmerRequest {
+    pub verified: bool,
+    pub note: Option<String>,
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

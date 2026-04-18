@@ -147,6 +147,10 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
         .route(
             "/farmers/:id/ratings",
             get(rating_handlers::get_seller_ratings).post(rating_handlers::rate_seller),
+        )
+        .route(
+            "/farmers/:id/verify",
+            post(farmer_handlers::verify_farmer),
         );
 
     // ── Products ──────────────────────────────────────────────────────────────
