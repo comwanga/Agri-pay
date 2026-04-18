@@ -39,6 +39,7 @@ pub struct Order {
     pub seller_delivery_date: Option<NaiveDate>,
     pub delivery_notes: Option<String>,
     pub delivery_photo_url: Option<String>,
+    pub escrow_mode: bool,
     pub status: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -64,6 +65,7 @@ struct OrderRow {
     seller_delivery_date: Option<NaiveDate>,
     delivery_notes: Option<String>,
     delivery_photo_url: Option<String>,
+    escrow_mode: bool,
     status: String,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -90,6 +92,7 @@ impl From<OrderRow> for Order {
             seller_delivery_date: r.seller_delivery_date,
             delivery_notes: r.delivery_notes,
             delivery_photo_url: r.delivery_photo_url,
+            escrow_mode: r.escrow_mode,
             status: r.status,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -184,7 +187,7 @@ const ORDER_SELECT: &str = r#"
         o.quantity, p.unit, o.unit_price_kes, o.total_kes, o.total_sats,
         o.buyer_location_name, o.distance_km,
         o.estimated_delivery_date, o.seller_delivery_date, o.delivery_notes,
-        o.delivery_photo_url,
+        o.delivery_photo_url, o.escrow_mode,
         o.status, o.created_at, o.updated_at
     FROM orders o
     JOIN products p  ON p.id = o.product_id
@@ -217,9 +220,10 @@ pub async fn create_order(
         status: String,
         location_lat: Option<f64>,
         location_lng: Option<f64>,
+        escrow_mode: bool,
     }
     let product: Option<ProductInfo> = sqlx::query_as(
-        "SELECT seller_id, price_kes, quantity_avail, status, location_lat, location_lng
+        "SELECT seller_id, price_kes, quantity_avail, status, location_lat, location_lng, escrow_mode
          FROM products WHERE id = $1",
     )
     .bind(body.product_id)
@@ -301,8 +305,9 @@ pub async fn create_order(
     let order_id: Uuid = sqlx::query_scalar(
         "INSERT INTO orders
              (product_id, seller_id, buyer_id, quantity, unit_price_kes, total_kes,
-              buyer_lat, buyer_lng, buyer_location_name, distance_km, estimated_delivery_date)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+              buyer_lat, buyer_lng, buyer_location_name, distance_km, estimated_delivery_date,
+              escrow_mode)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING id",
     )
     .bind(body.product_id)
@@ -316,6 +321,7 @@ pub async fn create_order(
     .bind(&buyer_location_name)
     .bind(distance_km)
     .bind(estimated_delivery_date)
+    .bind(product.escrow_mode)
     .fetch_one(&mut *tx)
     .await?;
 

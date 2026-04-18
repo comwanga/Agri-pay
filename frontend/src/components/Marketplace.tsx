@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Search, MapPin, Package, Globe, ChevronDown, Loader2, ShoppingCart, Check, SlidersHorizontal, X, ArrowUpDown, BadgeCheck } from 'lucide-react'
+import { Search, MapPin, Package, Globe, ChevronDown, Loader2, ShoppingCart, Check, SlidersHorizontal, X, ArrowUpDown, BadgeCheck, ShieldCheck } from 'lucide-react'
 import { listProductsPage, formatKes } from '../api/client.ts'
 import { PRODUCT_CATEGORIES, CATEGORY_ICONS } from '../types'
 import { useTranslation } from '../i18n/index.tsx'
@@ -78,9 +78,14 @@ function ProductCard({ product }: { product: Product }) {
             {CATEGORY_ICONS[product.category] ?? '📦'} {product.category}
           </span>
         )}
-        {product.is_global && (
+        {product.is_global && !product.escrow_mode && (
           <span className="absolute top-2 right-2 text-[10px] font-semibold bg-brand-500/80 text-white px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
             <Globe className="w-2.5 h-2.5" /> {t('market.ships_globally')}
+          </span>
+        )}
+        {product.escrow_mode && (
+          <span className="absolute top-2 right-2 text-[10px] font-semibold bg-green-900/90 text-green-300 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+            <ShieldCheck className="w-2.5 h-2.5" /> Escrow
           </span>
         )}
       </div>

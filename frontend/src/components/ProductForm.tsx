@@ -42,6 +42,7 @@ export default function ProductForm() {
   const [countryCode, setCountryCode]         = useState('KE')
   const [isGlobal, setIsGlobal]               = useState(false)
   const [lowStockThreshold, setLowStockThreshold] = useState('')
+  const [escrowMode, setEscrowMode] = useState(false)
 
   const [pendingImages, setPendingImages]     = useState<File[]>([])
   const [pendingPreviews, setPendingPreviews] = useState<string[]>([])
@@ -68,6 +69,7 @@ export default function ProductForm() {
       if (existing.country_code) setCountryCode(existing.country_code)
       setIsGlobal(existing.is_global ?? false)
       if (existing.low_stock_threshold) setLowStockThreshold(existing.low_stock_threshold)
+      setEscrowMode(existing.escrow_mode ?? false)
     }
   }, [existing])
 
@@ -117,6 +119,7 @@ export default function ProductForm() {
         unit,
         quantity_avail: quantity,
         low_stock_threshold: lowStockThreshold ? lowStockThreshold : null,
+        escrow_mode: escrowMode,
         category: category || undefined,
         location_name: locationName.trim() || undefined,
         location_lat: locationLat,
@@ -264,6 +267,22 @@ export default function ProductForm() {
               You'll be notified when stock drops to or below this level.
             </p>
           </div>
+
+          {/* Escrow mode */}
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <div
+              onClick={() => setEscrowMode(v => !v)}
+              className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${escrowMode ? 'bg-brand-500' : 'bg-gray-700'}`}
+            >
+              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${escrowMode ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-200">Escrow protected</p>
+              <p className="text-[11px] text-gray-500 leading-relaxed">
+                Payment is held by SokoPay until the buyer confirms receipt. Protects both parties.
+              </p>
+            </div>
+          </label>
 
           {/* Location + Country */}
           <div className="grid grid-cols-2 gap-3">

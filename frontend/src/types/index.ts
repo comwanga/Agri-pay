@@ -59,6 +59,7 @@ export interface Product {
   unit: string
   quantity_avail: string  // Decimal as string
   low_stock_threshold: string | null
+  escrow_mode: boolean
   category: string
   status: ProductStatus
   location_name: string
@@ -96,6 +97,7 @@ export interface UpdateProductPayload {
   unit?: string
   quantity_avail?: string
   low_stock_threshold?: string | null
+  escrow_mode?: boolean
   category?: string
   status?: ProductStatus
   location_name?: string
@@ -168,6 +170,7 @@ export interface Order {
   seller_delivery_date: string | null
   delivery_notes: string | null
   delivery_photo_url: string | null
+  escrow_mode: boolean
   status: OrderStatus
   created_at: string
   updated_at: string

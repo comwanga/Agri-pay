@@ -46,6 +46,7 @@ pub struct Product {
     pub unit: String,
     pub quantity_avail: Decimal,
     pub low_stock_threshold: Option<Decimal>,
+    pub escrow_mode: bool,
     pub category: String,
     pub status: String,
     pub location_name: String,
@@ -72,6 +73,7 @@ struct ProductRow {
     unit: String,
     quantity_avail: Decimal,
     low_stock_threshold: Option<Decimal>,
+    escrow_mode: bool,
     category: String,
     status: String,
     location_name: String,
@@ -112,6 +114,7 @@ pub struct UpdateProductRequest {
     pub unit: Option<String>,
     pub quantity_avail: Option<Decimal>,
     pub low_stock_threshold: Option<Decimal>,
+    pub escrow_mode: Option<bool>,
     pub category: Option<String>,
     pub status: Option<String>,
     pub location_name: Option<String>,
@@ -216,7 +219,7 @@ async fn fetch_product(pool: &sqlx::PgPool, product_id: Uuid) -> AppResult<Produ
         "SELECT p.id, p.seller_id, f.name AS seller_name,
                 (f.verified_at IS NOT NULL) AS seller_verified,
                 p.title, p.description, p.price_kes, p.unit,
-                p.quantity_avail, p.low_stock_threshold, p.category, p.status,
+                p.quantity_avail, p.low_stock_threshold, p.escrow_mode, p.category, p.status,
                 p.location_name, p.country_code, p.currency_code,
                 p.ships_to, p.is_global,
                 p.created_at, p.updated_at,
@@ -253,6 +256,7 @@ fn row_to_product(row: ProductRow, images: Vec<ProductImage>) -> Product {
         unit: row.unit,
         quantity_avail: row.quantity_avail,
         low_stock_threshold: row.low_stock_threshold,
+        escrow_mode: row.escrow_mode,
         category: row.category,
         status: row.status,
         location_name: row.location_name,
@@ -393,7 +397,7 @@ pub async fn list_products(
         SELECT p.id, p.seller_id, f.name AS seller_name,
                (f.verified_at IS NOT NULL) AS seller_verified,
                p.title, p.description, p.price_kes, p.unit,
-               p.quantity_avail, p.low_stock_threshold, p.category, p.status,
+               p.quantity_avail, p.low_stock_threshold, p.escrow_mode, p.category, p.status,
                p.location_name, p.country_code, p.currency_code,
                p.ships_to, p.is_global,
                p.created_at, p.updated_at,
@@ -713,7 +717,8 @@ pub async fn update_product(
             currency_code        = COALESCE($13, currency_code),
             ships_to             = COALESCE($14, ships_to),
             is_global            = COALESCE($15, is_global),
-            low_stock_threshold  = COALESCE($16, low_stock_threshold)
+            low_stock_threshold  = COALESCE($16, low_stock_threshold),
+            escrow_mode          = COALESCE($17, escrow_mode)
          WHERE id = $1",
     )
     .bind(id)
@@ -732,6 +737,7 @@ pub async fn update_product(
     .bind(body.ships_to.as_deref())
     .bind(body.is_global)
     .bind(body.low_stock_threshold)
+    .bind(body.escrow_mode)
     .execute(&state.db)
     .await?;
 

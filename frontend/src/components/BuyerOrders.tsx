@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Package, ChevronDown, ChevronUp, ThumbsUp, AlertTriangle,
   XCircle, Zap, CheckCircle, FileText, Send,
-  Smartphone, Loader2, RotateCcw, Camera,
+  Smartphone, Loader2, RotateCcw, Camera, ShieldCheck,
 } from 'lucide-react'
 import LightningInvoiceCard from './LightningInvoiceCard.tsx'
 import {
@@ -570,6 +570,19 @@ function OrderCard({ order }: { order: Order }) {
               Delivery to: <span className="text-gray-300">{order.buyer_location_name}</span>
               {order.distance_km != null && <> · {order.distance_km.toFixed(0)} km</>}
             </p>
+          )}
+
+          {/* Escrow notice */}
+          {order.escrow_mode && (
+            <div className="flex items-start gap-2 bg-green-900/20 border border-green-700/30 rounded-lg px-3 py-2">
+              <ShieldCheck className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-semibold text-green-300">Escrow protected</p>
+                <p className="text-[11px] text-green-500/80 leading-relaxed">
+                  Payment is held by SokoPay and released to the seller only after you confirm receipt.
+                </p>
+              </div>
+            </div>
           )}
 
           {/* Pay panel */}

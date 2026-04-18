@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, MapPin, Package, Truck, Zap,
   CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Check,
-  Smartphone, Loader2, ShoppingCart, BadgeCheck,
+  Smartphone, Loader2, ShoppingCart, BadgeCheck, ShieldCheck,
 } from 'lucide-react'
 import {
   getProduct, getOrder, createOrder, createInvoice, confirmPayment,
@@ -393,6 +393,17 @@ export default function ProductDetail() {
                 </span>
               )}
             </p>
+            {product.escrow_mode && (
+              <div className="flex items-start gap-2 mt-1 bg-green-900/20 border border-green-700/30 rounded-lg px-3 py-2">
+                <ShieldCheck className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-semibold text-green-300">Escrow protected</p>
+                  <p className="text-[11px] text-green-500/80 leading-relaxed">
+                    Your payment is held by SokoPay until you confirm receipt of goods.
+                  </p>
+                </div>
+              </div>
+            )}
             {product.location_name && (
               <p className="flex items-center gap-1">
                 <MapPin className="w-3.5 h-3.5" />
