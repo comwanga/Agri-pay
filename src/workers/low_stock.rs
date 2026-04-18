@@ -65,12 +65,10 @@ async fn send_low_stock_alerts(state: &SharedState) -> Result<u64, sqlx::Error> 
 
     for row in rows {
         // Stamp the alert time first so a crash in notification doesn't cause a spam loop.
-        let _ = sqlx::query(
-            "UPDATE products SET last_low_stock_alert_at = NOW() WHERE id = $1",
-        )
-        .bind(row.product_id)
-        .execute(&state.db)
-        .await;
+        let _ = sqlx::query("UPDATE products SET last_low_stock_alert_at = NOW() WHERE id = $1")
+            .bind(row.product_id)
+            .execute(&state.db)
+            .await;
 
         let msg = format!(
             "⚠️ Low stock: \"{}\" has only {} units left (threshold: {}). Top up your listing on SokoPay.",
@@ -94,7 +92,8 @@ async fn send_low_stock_alerts(state: &SharedState) -> Result<u64, sqlx::Error> 
             let phone = phone.clone();
             let msg3 = msg.clone();
             tokio::spawn(async move {
-                if let Err(e) = crate::notifications::sms::send(&http, &config, &phone, &msg3).await {
+                let res = crate::notifications::sms::send(&http, &config, &phone, &msg3).await;
+                if let Err(e) = res {
                     tracing::warn!("low_stock: SMS failed: {}", e);
                 }
             });
