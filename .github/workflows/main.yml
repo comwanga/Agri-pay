@@ -8,7 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_LOG: agri_pay=debug
+  RUST_LOG: sokopay=debug
 
 jobs:
   # ─────────────────────────────────────────────
@@ -24,7 +24,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: agripay_test
+          POSTGRES_DB: sokopay_test
         ports:
           - 5432:5432
         options: >-
@@ -62,7 +62,7 @@ jobs:
       - name: Run tests
         run: cargo test --all-features -- --nocapture
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/agripay_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/sokopay_test
 
       - name: Build release binary
         run: cargo build --release --locked

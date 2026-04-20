@@ -37,7 +37,7 @@ jobs:
         working-directory: frontend
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
-        run: npm run build -- --base=/Agri-pay/ --outDir=dist
+        run: npm run build -- --base=/sokopay/ --outDir=dist
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

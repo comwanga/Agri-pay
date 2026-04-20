@@ -3,7 +3,7 @@
 #
 # No upstream fix is available as of 2026-04.
 #
-# Why this is acceptable for agri-pay:
+# Why this is acceptable for sokopay:
 #   • We use jsonwebtoken with HS256 (HMAC-SHA256) exclusively.  No RSA-based
 #     JWT algorithms (RS256, PS256, etc.) are configured or accepted.
 #   • The `rsa` crate enters the tree as a transitive dependency of

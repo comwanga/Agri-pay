@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
 
     // ── Logging ───────────────────────────────────────────────────────────────
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "agri_pay=debug,tower_http=debug".into());
+        .unwrap_or_else(|_| "sokopay=debug,tower_http=debug".into());
 
     if config.log_format == "json" {
         tracing_subscriber::registry()
@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
             .init();
     }
 
-    tracing::info!("Starting agri-pay v{}", env!("CARGO_PKG_VERSION"));
+    tracing::info!("Starting sokopay v{}", env!("CARGO_PKG_VERSION"));
 
     // ── Ensure upload directory exists and is writable ───────────────────────
     tokio::fs::create_dir_all(&config.upload_dir)

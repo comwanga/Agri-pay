@@ -52,37 +52,37 @@ pub fn status_message(new_status: &str, product_title: &str, order_id: Uuid) -> 
     let short_id = &order_id.to_string()[..8];
     match new_status {
         "paid" => format!(
-            "AgriPay: Payment confirmed for order #{} ({}).",
+            "SokoPay: Payment confirmed for order #{} ({}).",
             short_id, product_title
         ),
         "processing" => format!(
-            "AgriPay: Your order #{} ({}) is now being prepared.",
+            "SokoPay: Your order #{} ({}) is now being prepared.",
             short_id, product_title
         ),
         "in_transit" => format!(
-            "AgriPay: Your order #{} ({}) is on its way!",
+            "SokoPay: Your order #{} ({}) is on its way!",
             short_id, product_title
         ),
         "delivered" => format!(
-            "AgriPay: Order #{} ({}) has been marked as delivered. \
+            "SokoPay: Order #{} ({}) has been marked as delivered. \
              Please confirm receipt or raise a dispute within 48 hours.",
             short_id, product_title
         ),
         "confirmed" => format!(
-            "AgriPay: Order #{} ({}) is complete. Thank you!",
+            "SokoPay: Order #{} ({}) is complete. Thank you!",
             short_id, product_title
         ),
         "disputed" => format!(
-            "AgriPay: A dispute was opened on order #{} ({}). \
+            "SokoPay: A dispute was opened on order #{} ({}). \
              An admin will review it within 24 hours.",
             short_id, product_title
         ),
         "cancelled" => format!(
-            "AgriPay: Order #{} ({}) has been cancelled.",
+            "SokoPay: Order #{} ({}) has been cancelled.",
             short_id, product_title
         ),
         _ => format!(
-            "AgriPay: Order #{} ({}) status changed to {}.",
+            "SokoPay: Order #{} ({}) status changed to {}.",
             short_id, product_title, new_status
         ),
     }

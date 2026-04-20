@@ -1,6 +1,6 @@
 //! Platform Lightning Address server (LNURL-pay).
 //!
-//! Lets the platform host Lightning Addresses like alice@agripay.app.
+//! Lets the platform host Lightning Addresses like alice@sokopay.app.
 //! Buyers' wallets use these three steps:
 //!   1. GET /.well-known/lnurlp/{slug}  — learn how much they can send
 //!   2. GET /lnurl/pay/{slug}/callback  — get the actual bolt11 invoice

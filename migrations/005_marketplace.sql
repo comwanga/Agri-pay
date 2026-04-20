@@ -1,4 +1,4 @@
--- AgriPay v3: Non-custodial P2P marketplace
+-- SokoPay v3: Non-custodial P2P marketplace
 -- Drop custodial tables and build new marketplace schema.
 
 -- ── Drop old custodial tables (dependency order) ──────────────────────────────

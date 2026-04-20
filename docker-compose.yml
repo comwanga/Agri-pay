@@ -4,15 +4,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: agripay
-      POSTGRES_PASSWORD: agripay_dev
-      POSTGRES_DB: agri_pay
+      POSTGRES_USER: sokopay
+      POSTGRES_PASSWORD: sokopay_dev
+      POSTGRES_DB: sokopay
     ports:
       - "5433:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agripay -d agri_pay"]
+      test: ["CMD-SHELL", "pg_isready -U sokopay -d sokopay"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -28,8 +28,8 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://agripay:agripay_dev@postgres:5432/agri_pay
-      RUST_LOG: agri_pay=info,tower_http=info
+      DATABASE_URL: postgresql://sokopay:sokopay_dev@postgres:5432/sokopay
+      RUST_LOG: sokopay=info,tower_http=info
       LOG_FORMAT: json
       JWT_SECRET: ${JWT_SECRET:-change-this-in-production-min-32-chars}
       JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-24}

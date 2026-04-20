@@ -78,7 +78,7 @@ impl RateOracle {
         let resp = self
             .http
             .get(&url)
-            .header("User-Agent", "agri-pay/0.3")
+            .header("User-Agent", "sokopay/0.3")
             .send()
             .await?
             .json::<CoinGeckoResponse>()

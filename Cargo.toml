@@ -1,11 +1,11 @@
 [package]
-name = "agri-pay"
+name = "sokopay"
 version = "0.3.0"
 edition = "2021"
 rust-version = "1.75"
 
 [[bin]]
-name = "agri-pay"
+name = "sokopay"
 path = "src/main.rs"
 
 [dependencies]

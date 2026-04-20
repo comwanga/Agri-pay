@@ -1,4 +1,4 @@
--- Agri-Pay v2 initial schema (PostgreSQL)
+-- SokoPay v2 initial schema (PostgreSQL)
 
 -- ── Users (admin / operator accounts) ────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (

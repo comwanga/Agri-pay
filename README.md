@@ -53,8 +53,8 @@ Built as a Fedi mini app so cooperative members sign in automatically. Payments 
 ### 1. Clone
 
 ```bash
-git clone https://github.com/comwanga/Agri-pay.git
-cd Agri-pay
+git clone https://github.com/comwanga/sokopay.git
+cd sokopay
 ```
 
 ### 2. Set up your environment
@@ -66,7 +66,7 @@ cp .env.example .env
 Minimum required in `.env`:
 
 ```env
-DATABASE_URL=postgresql://agripay:agripay_dev@localhost:5433/agri_pay?sslmode=disable
+DATABASE_URL=postgresql://sokopay:sokopay_dev@localhost:5433/sokopay?sslmode=disable
 JWT_SECRET=<openssl rand -base64 48>
 ```
 
@@ -119,7 +119,7 @@ Frontend at `http://localhost:5173`. For Nostr auth to work in production, open 
 
 ### Frontend (GitHub Pages)
 
-The frontend deploys automatically on every push to `main` via GitHub Actions. Live at [comwanga.github.io/Agri-pay](https://comwanga.github.io/Agri-pay/).
+The frontend deploys automatically on every push to `main` via GitHub Actions. Live at [comwanga.github.io/sokopay](https://comwanga.github.io/sokopay/).
 
 To connect to a backend:
 1. Deploy the Rust API to any server (Railway, Fly.io, a VPS)

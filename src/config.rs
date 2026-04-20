@@ -129,7 +129,7 @@ impl Config {
             bail!(
                 "CORS wildcard ('*') is not permitted outside local development. \
                  Set ALLOWED_ORIGINS to the specific frontend domain(s), \
-                 e.g. https://app.agripay.example.com"
+                 e.g. https://app.sokopay.example.com"
             );
         }
         if allowed_origins.iter().any(|o| o == "*") {

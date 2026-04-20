@@ -3,7 +3,7 @@ import { getProfile } from '../api/client.ts'
 import type { Farmer } from '../types'
 
 export function getTokenPayload(): { farmer_id?: string; role?: string } | null {
-  const token = localStorage.getItem('agri_pay_jwt')
+  const token = localStorage.getItem('sokopay_jwt')
   if (!token) return null
   try {
     return JSON.parse(atob(token.split('.')[1]))

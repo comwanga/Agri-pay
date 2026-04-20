@@ -61,8 +61,8 @@ declare global {
 
 // ─── Token management ────────────────────────────────────────────────────────
 
-const TOKEN_KEY = 'agri_pay_jwt'
-const NSEC_KEY  = 'agri_pay_nsec'
+const TOKEN_KEY = 'sokopay_jwt'
+const NSEC_KEY  = 'sokopay_nsec'
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
