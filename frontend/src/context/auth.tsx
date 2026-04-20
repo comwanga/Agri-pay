@@ -86,18 +86,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [authed])
 
-  // Silent background auth — Fedi (window.nostr) or returning users with a stored key
+  // Silent background auth — tries window.nostr (Fedi) or a stored key.
+  // Polls up to ~1s to handle Fedi injecting window.nostr slightly after mount.
   useEffect(() => {
     if (authed) return
-    const t = setTimeout(() => {
-      // Only attempt if there's actually a signer available
-      if (!window.nostr && !getLocalSecretKey()) return
-      setConnecting(true)
-      nostrLogin()
-        .then(onSuccess)
-        .catch(() => setConnecting(false)) // silent — user can connect manually
+    let attempts = 0
+    const MAX = 5
+    const iv = setInterval(() => {
+      attempts++
+      const hasSigner = !!window.nostr || !!getLocalSecretKey()
+      if (hasSigner) {
+        clearInterval(iv)
+        setConnecting(true)
+        nostrLogin()
+          .then(onSuccess)
+          .catch(() => setConnecting(false))
+      } else if (attempts >= MAX) {
+        clearInterval(iv)
+      }
     }, 200)
-    return () => clearTimeout(t)
+    return () => clearInterval(iv)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const connect = useCallback(async () => {

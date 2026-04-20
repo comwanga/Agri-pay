@@ -81,15 +81,18 @@ pub async fn nostr_login(
         ));
     }
 
-    // 3. u tag must reference this endpoint
+    // 3. u tag must point at our own auth endpoint
     let u_tag = event
         .tags
         .iter()
         .find(|t| t.first().map(|s| s == "u").unwrap_or(false))
         .and_then(|t| t.get(1))
         .ok_or_else(|| AppError::BadRequest("Missing u tag".into()))?;
-    if !u_tag.contains("/api/auth/nostr") {
-        return Err(AppError::BadRequest("Invalid u tag".into()));
+    let expected_suffix = "/auth/nostr";
+    if !u_tag.ends_with(expected_suffix) {
+        return Err(AppError::BadRequest(format!(
+            "u tag must end with {expected_suffix}"
+        )));
     }
 
     // 4. method tag must be POST

@@ -118,7 +118,7 @@ export async function pubkeyAuth(pubkeyHex: string): Promise<LoginResponse> {
 
 /** Sign a NIP-98 event locally (no browser extension required) and exchange for JWT. */
 export async function nostrLoginWithKey(secretKey: Uint8Array): Promise<LoginResponse> {
-  const url = `${window.location.origin}/api/auth/nostr`
+  const url = `${BASE}/auth/nostr`
 
   const event = finalizeEvent({
     kind: 27235,
@@ -242,9 +242,8 @@ export function logout(): void {
 }
 
 export async function nostrLogin(): Promise<LoginResponse> {
-  // 1. NIP-07 browser extension or Fedi mini-app
   if (window.nostr) {
-    const url = `${window.location.origin}/api/auth/nostr`
+    const url = `${BASE}/auth/nostr`
     const signedEvent = await window.nostr.signEvent({
       kind: 27235,
       created_at: Math.floor(Date.now() / 1000),
