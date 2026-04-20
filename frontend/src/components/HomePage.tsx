@@ -13,13 +13,11 @@ import ProductCard from './ProductCard.tsx'
 import clsx from 'clsx'
 import type { Product } from '../types'
 
-// ── Country name lookup ────────────────────────────────────────────────────────
 
 function countryName(code: string) {
   return COUNTRIES.find(c => c.code === code)?.name ?? code
 }
 
-// ── Hero carousel ─────────────────────────────────────────────────────────────
 
 const HERO_SLIDES = [
   {
@@ -133,7 +131,6 @@ function HeroCarousel() {
   )
 }
 
-// ── Category tile grid ────────────────────────────────────────────────────────
 
 function CategoryGrid() {
   const navigate = useNavigate()
@@ -169,7 +166,6 @@ function CategoryGrid() {
   )
 }
 
-// ── Horizontal product row ────────────────────────────────────────────────────
 
 function ProductRow({ title, products, viewAllLink }: { title: string; products: Product[]; viewAllLink: string }) {
   const navigate = useNavigate()
@@ -231,7 +227,6 @@ function ProductRow({ title, products, viewAllLink }: { title: string; products:
   )
 }
 
-// ── Editorial spotlight (category feature) ────────────────────────────────────
 
 function EditorialSpotlight({ category, gradient, tagline }: { category: string; gradient: string; tagline: string }) {
   const navigate = useNavigate()
@@ -288,7 +283,6 @@ function EditorialSpotlight({ category, gradient, tagline }: { category: string;
   )
 }
 
-// ── Delivery location banner ───────────────────────────────────────────────────
 
 function LocationBanner() {
   const navigate        = useNavigate()
@@ -310,7 +304,6 @@ function LocationBanner() {
   )
 }
 
-// ── Trust bar ──────────────────────────────────────────────────────────────────
 
 function TrustBar() {
   const items = [
@@ -331,7 +324,6 @@ function TrustBar() {
   )
 }
 
-// ── Main homepage ─────────────────────────────────────────────────────────────
 
 export default function HomePage() {
   const { country } = useCountry()
@@ -435,7 +427,6 @@ export default function HomePage() {
   )
 }
 
-// ── Recently viewed row ───────────────────────────────────────────────────────
 
 function RecentlyViewedRow() {
   const { ids, clear } = useRecentlyViewed()
@@ -477,7 +468,6 @@ function RecentlyViewedRow() {
   )
 }
 
-// ── Sell CTA banner ───────────────────────────────────────────────────────────
 
 function SellCTABanner() {
   const navigate = useNavigate()

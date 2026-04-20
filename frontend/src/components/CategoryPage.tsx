@@ -6,7 +6,6 @@ import { CATEGORY_ICONS, PRODUCT_CATEGORIES } from '../types'
 import ProductCard from './ProductCard.tsx'
 import clsx from 'clsx'
 
-// ── Category gradient map ─────────────────────────────────────────────────────
 
 const CATEGORY_GRADIENTS: Record<string, string> = {
   'Food & Groceries':   'from-green-900/60 to-gray-900',
@@ -36,7 +35,6 @@ const CATEGORY_TAGLINES: Record<string, string> = {
   'Other':              "Everything else — if it exists, it's here",
 }
 
-// ── Related categories ────────────────────────────────────────────────────────
 
 function RelatedCategories({ current }: { current: string }) {
   const navigate = useNavigate()
@@ -61,7 +59,6 @@ function RelatedCategories({ current }: { current: string }) {
   )
 }
 
-// ── Category page ─────────────────────────────────────────────────────────────
 
 export default function CategoryPage() {
   const { cat }  = useParams<{ cat: string }>()

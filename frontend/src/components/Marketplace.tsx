@@ -19,7 +19,6 @@ const SORT_I18N_KEYS: Record<SortOption, string> = {
   rating: 'market.sort.rating',
 }
 
-// ── Country selector ──────────────────────────────────────────────────────────
 
 function CountrySelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false)
@@ -74,7 +73,6 @@ function CountrySelector({ value, onChange }: { value: string; onChange: (v: str
   )
 }
 
-// ── Main marketplace page ──────────────────────────────────────────────────────
 
 const PAGE_SIZE = 24
 
@@ -105,13 +103,11 @@ export default function Marketplace() {
   const [allProducts, setAllProducts] = useState<Product[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
 
-  // Debounce search so we don't fire on every keystroke
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 400)
     return () => clearTimeout(timer)
   }, [search])
 
-  // Sync active filters to URL so back-navigation restores state
   useEffect(() => {
     const params: Record<string, string> = {}
     if (debouncedSearch) params.q          = debouncedSearch
@@ -163,7 +159,6 @@ export default function Marketplace() {
     staleTime: 30_000,
   })
 
-  // Accumulate pages
   useEffect(() => {
     if (!data) return
     if (cursor === undefined) {

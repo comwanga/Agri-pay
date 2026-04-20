@@ -72,7 +72,6 @@ export default function ProductDetail() {
     enabled: !!id,
   })
 
-  // Track this product as recently viewed once it loads
   useEffect(() => {
     if (id && product) pushRecent(id)
   }, [id, product, pushRecent])

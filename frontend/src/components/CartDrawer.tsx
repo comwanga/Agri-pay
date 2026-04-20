@@ -8,7 +8,6 @@ import { createOrder, formatKes } from '../api/client.ts'
 import { useAuth } from '../context/auth.tsx'
 import clsx from 'clsx'
 
-// ── Per-item checkout status ──────────────────────────────────────────────────
 
 type ItemStatus = 'idle' | 'pending' | 'done' | 'error'
 
@@ -18,7 +17,6 @@ interface OrderResult {
   error?: string
 }
 
-// ── Cart drawer ───────────────────────────────────────────────────────────────
 
 interface CartDrawerProps {
   open: boolean

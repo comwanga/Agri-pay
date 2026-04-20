@@ -20,7 +20,6 @@ import Footer from './Footer.tsx'
 import clsx from 'clsx'
 import type { ReactNode } from 'react'
 
-// ── BTC rate pill (compact, for navbar) ───────────────────────────────────────
 
 function RatePill() {
   const { fiatCurrency } = useDisplaySettings()
@@ -51,7 +50,6 @@ function RatePill() {
   )
 }
 
-// ── Top navigation bar ────────────────────────────────────────────────────────
 
 interface TopNavbarProps {
   onMenuOpen: () => void
@@ -200,7 +198,6 @@ function TopNavbar({ onMenuOpen, onCartOpen, onConverterOpen }: TopNavbarProps) 
   )
 }
 
-// ── Mega menu ─────────────────────────────────────────────────────────────────
 
 interface MegaMenuProps {
   open: boolean
@@ -395,7 +392,6 @@ function MegaMenu({ open, onClose, onConverterOpen }: MegaMenuProps) {
   )
 }
 
-// ── Bottom tab bar (mobile) ───────────────────────────────────────────────────
 
 function BottomNav({ onCartOpen }: { onCartOpen: () => void }) {
   const { authed, connect } = useAuth()
@@ -480,7 +476,6 @@ function BottomNav({ onCartOpen }: { onCartOpen: () => void }) {
   )
 }
 
-// ── Root layout ───────────────────────────────────────────────────────────────
 
 export default function Layout({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen]           = useState(false)
