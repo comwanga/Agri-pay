@@ -53,8 +53,8 @@ Built as a Fedi mini app so cooperative members sign in automatically. Payments 
 ### 1. Clone
 
 ```bash
-git clone https://github.com/comwanga/sokopay.git
-cd sokopay
+git clone https://github.com/comwanga/SokoPay.git
+cd SokoPay
 ```
 
 ### 2. Set up your environment
