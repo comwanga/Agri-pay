@@ -481,6 +481,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen]           = useState(false)
   const [converterOpen, setConverterOpen] = useState(false)
   const [cartOpen, setCartOpen]           = useState(false)
+  const { error, clearError }             = useAuth()
 
   const openMenu      = useCallback(() => setMenuOpen(true), [])
   const closeMenu     = useCallback(() => setMenuOpen(false), [])
@@ -494,6 +495,18 @@ export default function Layout({ children }: { children: ReactNode }) {
         onCartOpen={openCart}
         onConverterOpen={openConverter}
       />
+
+      {error && (
+        <div className="fixed top-14 inset-x-0 z-50 flex justify-center px-4 pt-2 pointer-events-none">
+          <div className="flex items-center gap-3 bg-red-900/90 border border-red-700/60 rounded-xl px-4 py-2.5 shadow-lg pointer-events-auto max-w-sm w-full">
+            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+            <p className="text-xs text-red-300 flex-1">{error}</p>
+            <button onClick={clearError} className="text-red-500 hover:text-red-300 transition-colors shrink-0">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <MegaMenu
         open={menuOpen}

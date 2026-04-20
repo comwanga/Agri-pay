@@ -100,7 +100,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setConnecting(true)
         nostrLogin()
           .then(onSuccess)
-          .catch(() => setConnecting(false))
+          .catch(e => {
+            setConnecting(false)
+            // Only surface errors that aren't "no signer available" —
+            // that's expected when running outside Fedi/without a stored key
+            const msg = e instanceof Error ? e.message : ''
+            if (msg && msg !== 'NO_SIGNER') setError(msg)
+          })
       } else if (attempts >= MAX) {
         clearInterval(iv)
       }
