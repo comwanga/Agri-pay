@@ -17,7 +17,6 @@ export default function ProductCard({ product }: { product: Product }) {
   const primaryImage = product.images.find(i => i.is_primary) ?? product.images[0]
   const qty          = parseFloat(product.quantity_avail)
   const inCart       = items.some(i => i.product.id === product.id)
-  const price        = parseFloat(product.price_kes)
   const isLowStock   = qty <= 10 && qty > 0
 
   function handleAddToCart(e: React.MouseEvent) {

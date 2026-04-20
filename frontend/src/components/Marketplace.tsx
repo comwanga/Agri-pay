@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate, useSearchParams, createSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { useCountry } from '../hooks/useCountry.ts'
 import { Search, Package, Globe, ChevronDown, Loader2, SlidersHorizontal, X, ArrowUpDown } from 'lucide-react'
 import { listProductsPage } from '../api/client.ts'
@@ -80,7 +80,7 @@ const PAGE_SIZE = 24
 
 export default function Marketplace() {
   const { t } = useTranslation()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [search, setSearch] = useState(() => searchParams.get('q') ?? '')
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('q') ?? '')
@@ -121,7 +121,7 @@ export default function Marketplace() {
     if (minPrice)        params.min_price  = minPrice
     if (maxPrice)        params.max_price  = maxPrice
     if (inStockOnly)     params.in_stock   = 'true'
-    navigate({ search: createSearchParams(params).toString() }, { replace: true })
+    setSearchParams(params, { replace: true })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, category, country, sort, minPrice, maxPrice, inStockOnly])
 

@@ -1,8 +1,8 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, Package, Loader2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Package } from 'lucide-react'
 import { listProducts } from '../api/client.ts'
-import { CATEGORY_ICONS, PRODUCT_CATEGORIES, type ProductCategory } from '../types'
+import { CATEGORY_ICONS, PRODUCT_CATEGORIES } from '../types'
 import ProductCard from './ProductCard.tsx'
 import clsx from 'clsx'
 
@@ -79,7 +79,7 @@ export default function CategoryPage() {
     enabled:   !!decoded,
   })
 
-  const { data: newest, isLoading: loadingNew } = useQuery({
+  const { data: newest } = useQuery({
     queryKey: ['category-new', decoded],
     queryFn:  () => listProducts({ category: decoded, sort: 'newest', per_page: 8 }),
     staleTime: 60_000,

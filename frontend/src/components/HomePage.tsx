@@ -7,7 +7,6 @@ import {
 } from 'lucide-react'
 import { listProducts, getProduct, formatKes } from '../api/client.ts'
 import { PRODUCT_CATEGORIES, CATEGORY_ICONS, COUNTRIES } from '../types'
-import { useTranslation } from '../i18n/index.tsx'
 import { useRecentlyViewed } from '../hooks/useRecentlyViewed.ts'
 import { useCountry } from '../hooks/useCountry.ts'
 import ProductCard from './ProductCard.tsx'
@@ -335,7 +334,6 @@ function TrustBar() {
 // ── Main homepage ─────────────────────────────────────────────────────────────
 
 export default function HomePage() {
-  const { t } = useTranslation()
   const { country } = useCountry()
   const label = country ? countryName(country) : undefined
 
