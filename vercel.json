@@ -2,8 +2,16 @@
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "static",
   "framework": null,
+  "build": {
+    "env": {
+      "VITE_BASE_PATH": "/"
+    }
+  },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/((?!assets/)(?!.*\\.[a-zA-Z0-9]+$).*)",
+      "destination": "/index.html"
+    }
   ],
   "headers": [
     {
