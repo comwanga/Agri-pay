@@ -37,9 +37,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
         </div>
         <p className="text-gray-100 font-semibold mb-1">Connect to continue</p>
         <p className="text-sm text-gray-500 mb-5 leading-relaxed">
-          This feature requires a Nostr identity.
-          Open SokoPay inside <strong className="text-gray-300">Fedi</strong> for instant access,
-          or paste your public key below.
+          Sign in with your Nostr identity to continue.
+          Open SokoPay inside <strong className="text-gray-300">Fedi</strong> for instant access.
         </p>
         <button
           onClick={connect}
