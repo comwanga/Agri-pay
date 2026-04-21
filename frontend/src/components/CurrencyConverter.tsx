@@ -161,9 +161,9 @@ export default function CurrencyConverter({ onClose }: Props) {
         onClick={onClose}
       />
 
-      {/* Bottom sheet */}
-      <div className="fixed bottom-0 inset-x-0 z-50 flex justify-center">
-        <div className="w-full max-w-md bg-[#0d0d0d] rounded-t-3xl border-t border-gray-800 shadow-2xl px-4 pt-2 pb-10">
+      {/* Bottom sheet on mobile, centered modal on desktop */}
+      <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+        <div className="w-full max-w-md bg-[#0d0d0d] rounded-t-3xl sm:rounded-3xl border-t sm:border border-gray-800 shadow-2xl px-4 pt-2 pb-10 sm:pb-6 sm:mx-4 max-h-[85vh] overflow-y-auto">
 
           {/* Header */}
           <div className="flex items-center justify-between py-3 mb-3">
