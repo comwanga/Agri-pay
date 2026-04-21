@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
-import { getToken, nostrLogin, getProfile, getLocalSecretKey, refreshAuthToken } from '../api/client.ts'
+import { getToken, nostrLogin, getProfile, getLocalSecretKey, refreshAuthToken, applyReferral } from '../api/client.ts'
 import { getTokenPayload } from '../hooks/useCurrentFarmer.ts'
 import { useNavigate } from 'react-router-dom'
 import ConnectModal from '../components/ConnectModal.tsx'
@@ -52,7 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRole(getRole())
     setConnecting(false)
     setShowModal(false)
-    // Only check Lightning Address on first login — not on every modal re-auth
+    // Only run first-login actions once per session
     if (!wasAuthed) {
       try {
         const payload = getTokenPayload()
@@ -60,6 +60,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const farmer = await getProfile(payload.farmer_id)
           if (!farmer.ln_address) navigate('/profile?setup=1', { replace: true })
         }
+      } catch { /* non-fatal */ }
+
+      // Auto-apply referral code from the URL (?ref=CODE) on first login.
+      // Silently ignored if invalid, already used, or absent.
+      try {
+        const params = new URLSearchParams(window.location.search)
+        const ref = params.get('ref')
+        if (ref) applyReferral(ref).catch(() => {})
       } catch { /* non-fatal */ }
     }
   }, [navigate, authed])

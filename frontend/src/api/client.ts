@@ -763,11 +763,12 @@ export async function revokeApiKey(id: string): Promise<void> {
 
 export interface ReferralCodeResponse {
   referral_code: string
-  referral_link: string
+  share_url: string
 }
 
 export interface ReferralStats {
   referral_code: string
+  share_url: string
   total_referrals: number
 }
 
@@ -779,11 +780,11 @@ export async function getReferralStats(): Promise<ReferralStats> {
   return request<ReferralStats>('/referrals/stats')
 }
 
-export async function applyReferral(referral_code: string): Promise<{ applied: boolean }> {
+export async function applyReferral(code: string): Promise<{ applied: boolean }> {
   return request<{ applied: boolean }>('/referrals/apply', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ referral_code }),
+    body: JSON.stringify({ code }),
   })
 }
 

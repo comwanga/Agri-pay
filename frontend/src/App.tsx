@@ -16,6 +16,7 @@ import SellerStorefront from './components/SellerStorefront.tsx'
 import PriceIndex from './components/PriceIndex.tsx'
 import CategoryPage from './components/CategoryPage.tsx'
 import CartPage from './components/CartPage.tsx'
+import DeveloperSettings from './components/DeveloperSettings.tsx'
 
 function RequireAdmin({ children }: { children: React.ReactNode }) {
   const { authed, isAdmin } = useAuth()
@@ -68,6 +69,7 @@ function AppRoutes() {
         <Route path="/payments" element={<RequireAuth><PaymentHistory /></RequireAuth>} />
         <Route path="/settings" element={<RequireAuth><DisplayOptions /></RequireAuth>} />
         <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
+        <Route path="/settings/developer" element={<RequireAuth><DeveloperSettings /></RequireAuth>} />
         <Route path="/admin" element={<RequireAdmin><AdminDisputes /></RequireAdmin>} />
         <Route path="/sellers/:id" element={<SellerStorefront />} />
         <Route path="/price-index" element={<PriceIndex />} />

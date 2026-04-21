@@ -36,7 +36,7 @@ export default function ReferralProgram() {
 
   function copyLink() {
     if (!ref) return
-    navigator.clipboard.writeText(ref.referral_link)
+    navigator.clipboard.writeText(ref.share_url)
     setLinkCopied(true)
     setTimeout(() => setLinkCopied(false), 2000)
   }
@@ -71,7 +71,7 @@ export default function ReferralProgram() {
             <div className="flex items-center gap-2">
               <input
                 readOnly
-                value={ref.referral_link}
+                value={ref.share_url}
                 className="flex-1 text-xs bg-gray-900 text-gray-300 rounded-lg px-3 py-2 font-mono border border-gray-700 outline-none"
               />
               <button

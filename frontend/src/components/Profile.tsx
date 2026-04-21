@@ -3,14 +3,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   User, Zap, MapPin, Smartphone, Check, AlertCircle, ExternalLink,
-  Loader2, ShieldCheck, RefreshCw, CheckCircle2, XCircle, Settings, ChevronRight,
+  Loader2, ShieldCheck, RefreshCw, CheckCircle2, XCircle, Settings, ChevronRight, Code2,
 } from 'lucide-react'
 import { updateProfile, verifyLnAddress, isFediContext } from '../api/client.ts'
 import { useCurrentFarmer } from '../hooks/useCurrentFarmer.ts'
 import type { LnVerifyResponse } from '../types'
 import clsx from 'clsx'
-import ApiKeyManager from './ApiKeyManager.tsx'
-import ReferralProgram from './ReferralProgram.tsx'
 
 function Field({
   label,
@@ -489,14 +487,22 @@ export default function Profile() {
         </div>
       </form>
 
-      {/* Referral program */}
-      <div className="border-t border-gray-800 pt-6">
-        <ReferralProgram />
-      </div>
-
-      {/* Developer API keys */}
-      <div className="border-t border-gray-800 pt-6">
-        <ApiKeyManager />
+      {/* Developer settings link */}
+      <div className="border-t border-gray-800 pt-5">
+        <button
+          type="button"
+          onClick={() => navigate('/settings/developer')}
+          className="w-full flex items-center justify-between px-4 py-3.5 rounded-xl bg-gray-900 border border-gray-800 hover:bg-gray-800 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <Code2 className="w-4 h-4 text-gray-400 shrink-0" />
+            <div className="text-left">
+              <p className="text-sm font-medium text-gray-200">Developer & Referrals</p>
+              <p className="text-xs text-gray-500">API keys, referral code, invite link</p>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
+        </button>
       </div>
     </div>
   )
