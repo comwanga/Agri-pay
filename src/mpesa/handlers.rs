@@ -225,7 +225,15 @@ pub async fn initiate_stk_push(
     // Trigger STK Push
     let stk = mpesa
         .stk_push(&phone, amount_u64, &account_ref, description)
-        .await?;
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                order_id = %body.order_id,
+                error = %e,
+                "STK push initiation failed"
+            );
+            e
+        })?;
 
     // Persist the pending payment record.
     // The unique partial index (order_id WHERE status='pending') is the last
@@ -357,15 +365,17 @@ pub async fn mpesa_callback(
         "Daraja STK Push callback received"
     );
 
-    // Look up the pending payment record by checkout_request_id
+    // Look up the pending payment record by checkout_request_id.
+    // created_at is fetched here so we can measure how long Daraja took to call back.
     #[derive(FromRow)]
     struct MpesaPaymentRow {
         id: Uuid,
         order_id: Uuid,
         status: String,
+        created_at: chrono::DateTime<chrono::Utc>,
     }
     let row: Option<MpesaPaymentRow> = sqlx::query_as(
-        "SELECT id, order_id, status FROM mpesa_payments
+        "SELECT id, order_id, status, created_at FROM mpesa_payments
          WHERE checkout_request_id = $1",
     )
     .bind(&cb.checkout_request_id)
@@ -495,6 +505,15 @@ pub async fn mpesa_callback(
         }
 
         crate::metrics::record_stk_push_result(true);
+
+        // Record how long Daraja took to call back after the buyer confirmed payment.
+        let lag = chrono::Utc::now()
+            .signed_duration_since(row.created_at)
+            .to_std()
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
+        crate::metrics::record_stk_push_callback_lag(lag);
+
         tracing::info!(
             order_id = %row.order_id,
             receipt = ?receipt,

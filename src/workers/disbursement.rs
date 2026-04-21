@@ -49,39 +49,29 @@ async fn reconcile_stale_disbursements(state: &SharedState) -> Result<(), sqlx::
         return Ok(());
     }
 
+    let ids: Vec<uuid::Uuid> = stale_ids.into_iter().map(|(id,)| id).collect();
+
     tracing::warn!(
-        count = stale_ids.len(),
+        count = ids.len(),
         "Found stale disbursements — marking manual_required"
     );
 
-    for (id,) in &stale_ids {
-        let result = sqlx::query(
-            "UPDATE disbursements
-             SET status = 'manual_required',
-                 notes  = COALESCE(notes || ' | ', '') ||
-                          'No B2C callback received within 15 min — check Safaricom portal'
-             WHERE id = $1 AND status IN ('pending', 'processing')",
-        )
-        .bind(id)
-        .execute(&state.db)
-        .await;
+    // Single UPDATE instead of one round-trip per row.
+    sqlx::query(
+        "UPDATE disbursements
+         SET status = 'manual_required',
+             notes  = COALESCE(notes || ' | ', '') ||
+                      'No B2C callback received within 15 min — check Safaricom portal'
+         WHERE id = ANY($1) AND status IN ('pending', 'processing')",
+    )
+    .bind(&ids[..])
+    .execute(&state.db)
+    .await?;
 
-        match result {
-            Ok(_) => {
-                tracing::warn!(
-                    disbursement_id = %id,
-                    "Stale disbursement marked manual_required"
-                );
-            }
-            Err(e) => {
-                tracing::error!(
-                    disbursement_id = %id,
-                    error = %e,
-                    "Failed to mark stale disbursement"
-                );
-            }
-        }
-    }
+    tracing::warn!(
+        count = ids.len(),
+        "Stale disbursements marked manual_required"
+    );
 
     Ok(())
 }

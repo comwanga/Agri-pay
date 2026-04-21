@@ -325,16 +325,17 @@ pub async fn b2c_result(
         "Daraja B2C result callback received"
     );
 
-    // Find the disbursement row by conversation_id
-    let row: Option<(Uuid,)> =
-        sqlx::query_as("SELECT id FROM disbursements WHERE b2c_conversation_id = $1")
+    // Find the disbursement row by conversation_id.
+    // initiated_at is fetched so we can record how long the B2C transfer took.
+    let row: Option<(Uuid, chrono::DateTime<chrono::Utc>)> =
+        sqlx::query_as("SELECT id, initiated_at FROM disbursements WHERE b2c_conversation_id = $1")
             .bind(&result.conversation_id)
             .fetch_optional(&state.db)
             .await
             .ok()
             .flatten();
 
-    let (disbursement_id,) = match row {
+    let (disbursement_id, initiated_at) = match row {
         Some(r) => r,
         None => {
             tracing::warn!(
@@ -369,6 +370,15 @@ pub async fn b2c_result(
         .map_err(|e| tracing::error!(error = %e, "Failed to update disbursement to paid"));
 
         crate::metrics::record_disbursement_paid();
+
+        // Record how long the B2C transfer took from initiation to result callback.
+        let lag = chrono::Utc::now()
+            .signed_duration_since(initiated_at)
+            .to_std()
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
+        crate::metrics::record_disbursement_processing(lag);
+
         tracing::info!(
             disbursement_id = %disbursement_id,
             receipt         = ?receipt,

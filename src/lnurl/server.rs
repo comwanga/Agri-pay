@@ -401,6 +401,22 @@ pub async fn btcpay_webhook(
                 );
             }
 
+            // Record how long the invoice took to settle after creation.
+            if let Ok(Some(created_at)) = sqlx::query_scalar::<_, chrono::DateTime<chrono::Utc>>(
+                "SELECT created_at FROM payments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1",
+            )
+            .bind(oid)
+            .fetch_optional(&state.db)
+            .await
+            {
+                let lag = chrono::Utc::now()
+                    .signed_duration_since(created_at)
+                    .to_std()
+                    .map(|d| d.as_secs_f64())
+                    .unwrap_or(0.0);
+                crate::metrics::record_btcpay_invoice_settlement(lag);
+            }
+
             tracing::info!(order_id = %oid, "Order auto-advanced to paid via BTCPay webhook");
         }
     }
