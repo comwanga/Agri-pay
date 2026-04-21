@@ -5,7 +5,7 @@ export default defineConfig(({ command }) => ({
   plugins: [react()],
   // In production builds (GitHub Pages), assets live under /sokopay/.
   // During local dev the server runs at root so the sub-path is not needed.
-  base: command === 'build' ? '/sokopay/' : '/',
+  base: command === 'build' ? '/SokoPay/' : '/',
   server: {
     port: 5173,
     proxy: {
