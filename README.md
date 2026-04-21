@@ -6,7 +6,8 @@ Built as a Fedi mini app so cooperative members sign in automatically. Payments 
 
 ---
 
-![SokoPay marketplace](https://github.com/user-attachments/assets/94f0dcef-ac4a-4c2b-9500-5bdd96274b87)
+<img width="391" height="869" alt="image" src="https://github.com/user-attachments/assets/d8b79d78-a6f5-441e-a4d8-7821706f636c" />
+
 
 ---
 
