@@ -327,9 +327,9 @@ pub async fn create_invoice(
 
         let ln_address = ln_address.ok_or_else(|| {
             AppError::BadRequest(
-                "Lightning payment is unavailable: no payment node is configured for this \
-                 platform and the seller has not set a Lightning Address. \
-                 Please choose M-Pesa or contact the seller."
+                "Lightning payment is unavailable: this seller has not set a \
+                 Lightning Address or LNURL in their profile. \
+                 Please choose M-Pesa or ask the seller to add their Lightning Address."
                     .into(),
             )
         })?;
@@ -339,20 +339,20 @@ pub async fn create_invoice(
             .request_invoice(&ln_address, amount_sats * 1000)
             .await
             .map_err(|e| {
-                // Log the specific address and seller so admins can identify and fix
-                // broken Lightning Addresses without digging through the DB.
                 tracing::error!(
                     seller_id   = %order.seller_id,
                     ln_address  = %ln_address,
                     order_id    = %body.order_id,
                     "Seller LNURL invoice failed: {}", e,
                 );
-                AppError::Unavailable(
-                    "Lightning payment is currently unavailable for this seller. \
-                     Please select M-Pesa as your payment method, or ask the seller \
-                     to verify their Lightning Address in their profile settings."
-                        .into(),
-                )
+                // Surface the real error so the buyer can take action
+                // (e.g. wallet offline, amount out of range, network issue).
+                AppError::Unavailable(format!(
+                    "Lightning payment failed: {}. \
+                     You can select M-Pesa instead, or ask the seller \
+                     to check their Lightning Address / LNURL in profile settings.",
+                    e
+                ))
             })?;
 
         tracing::info!(
