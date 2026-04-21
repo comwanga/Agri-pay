@@ -366,8 +366,14 @@ async fn metrics_handler(
     let expected_token = std::env::var("METRICS_TOKEN").unwrap_or_default();
 
     if expected_token.is_empty() {
-        tracing::warn!("METRICS_TOKEN is not set — /metrics is returning 503 until it is configured");
-        return (StatusCode::SERVICE_UNAVAILABLE, "METRICS_TOKEN not configured").into_response();
+        tracing::warn!(
+            "METRICS_TOKEN is not set — /metrics is returning 503 until it is configured"
+        );
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "METRICS_TOKEN not configured",
+        )
+            .into_response();
     }
 
     let provided = headers

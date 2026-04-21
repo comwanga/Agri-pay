@@ -423,12 +423,10 @@ pub async fn resolve_dispute(
     // the disbursements row inside the same transaction that resolves the dispute.
     // This ensures we never have a resolved dispute with no refund record.
     let refund_context: Option<(Uuid, Decimal)> = if body.resolution == "refund_buyer" {
-        sqlx::query_as::<_, (Uuid, Decimal)>(
-            "SELECT buyer_id, total_kes FROM orders WHERE id = $1",
-        )
-        .bind(order_id)
-        .fetch_optional(&state.db)
-        .await?
+        sqlx::query_as::<_, (Uuid, Decimal)>("SELECT buyer_id, total_kes FROM orders WHERE id = $1")
+            .bind(order_id)
+            .fetch_optional(&state.db)
+            .await?
     } else {
         None
     };
@@ -455,8 +453,7 @@ pub async fn resolve_dispute(
     // Insert a disbursements row for buyer refunds so the reconciliation worker
     // and admin panel can track whether the money actually reached the buyer.
     // seller_id is set to buyer_id here because the buyer is the payout recipient.
-    let refund_disbursement_id: Option<Uuid> = if let Some((buyer_id, total_kes)) = refund_context
-    {
+    let refund_disbursement_id: Option<Uuid> = if let Some((buyer_id, total_kes)) = refund_context {
         sqlx::query_scalar(
             "INSERT INTO disbursements
                  (order_id, seller_id, gross_kes, commission_kes, net_kes,

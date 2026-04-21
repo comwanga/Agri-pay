@@ -230,13 +230,25 @@ mod tests {
         let now = chrono::Utc::now().timestamp();
 
         // Within the window — must pass (abs diff ≤ 30)
-        assert!((now - (now - 15)).abs() <= 30, "15s ago should be within window");
+        assert!(
+            (now - (now - 15)).abs() <= 30,
+            "15s ago should be within window"
+        );
         assert!((now - now).abs() <= 30, "now should be within window");
-        assert!((now - (now + 10)).abs() <= 30, "10s in future should be within window");
+        assert!(
+            (now - (now + 10)).abs() <= 30,
+            "10s in future should be within window"
+        );
 
         // Outside the window — must be rejected (abs diff > 30)
         assert!((now - (now - 31)).abs() > 30, "31s ago should be stale");
-        assert!((now - (now - 3600)).abs() > 30, "1 hour ago should be stale");
-        assert!((now - (now + 31)).abs() > 30, "31s in future should be rejected");
+        assert!(
+            (now - (now - 3600)).abs() > 30,
+            "1 hour ago should be stale"
+        );
+        assert!(
+            (now - (now + 31)).abs() > 30,
+            "31s in future should be rejected"
+        );
     }
 }

@@ -18,7 +18,11 @@ use crate::error::{AppError, AppResult};
 use crate::mpesa::client::B2cResult;
 use crate::mpesa::handlers::{extract_caller_ip, is_allowed_daraja_ip};
 use crate::state::SharedState;
-use axum::{extract::State, http::{HeaderMap, StatusCode}, Json};
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    Json,
+};
 use chrono::{DateTime, Utc};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;

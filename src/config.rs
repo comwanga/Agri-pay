@@ -94,23 +94,50 @@ impl std::fmt::Debug for Config {
             .field("allowed_origins", &self.allowed_origins)
             .field("log_format", &self.log_format)
             .field("btcpay_url", &self.btcpay_url)
-            .field("btcpay_api_key", &self.btcpay_api_key.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "btcpay_api_key",
+                &self.btcpay_api_key.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("btcpay_store_id", &self.btcpay_store_id)
-            .field("btcpay_webhook_secret", &self.btcpay_webhook_secret.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "btcpay_webhook_secret",
+                &self.btcpay_webhook_secret.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("nostr_relay_url", &self.nostr_relay_url)
-            .field("nostr_privkey_hex", &self.nostr_privkey_hex.as_ref().map(|_| "[REDACTED]"))
-            .field("mpesa_consumer_key", &self.mpesa_consumer_key.as_ref().map(|_| "[REDACTED]"))
-            .field("mpesa_consumer_secret", &self.mpesa_consumer_secret.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "nostr_privkey_hex",
+                &self.nostr_privkey_hex.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "mpesa_consumer_key",
+                &self.mpesa_consumer_key.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "mpesa_consumer_secret",
+                &self.mpesa_consumer_secret.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("mpesa_shortcode", &self.mpesa_shortcode)
-            .field("mpesa_passkey", &self.mpesa_passkey.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "mpesa_passkey",
+                &self.mpesa_passkey.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("mpesa_callback_url", &self.mpesa_callback_url)
             .field("mpesa_env", &self.mpesa_env)
             .field("mpesa_b2c_initiator_name", &self.mpesa_b2c_initiator_name)
-            .field("mpesa_b2c_security_credential", &self.mpesa_b2c_security_credential.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "mpesa_b2c_security_credential",
+                &self
+                    .mpesa_b2c_security_credential
+                    .as_ref()
+                    .map(|_| "[REDACTED]"),
+            )
             .field("mpesa_b2c_result_url", &self.mpesa_b2c_result_url)
             .field("mpesa_b2c_timeout_url", &self.mpesa_b2c_timeout_url)
             .field("platform_commission_rate", &self.platform_commission_rate)
-            .field("africas_talking_api_key", &self.africas_talking_api_key.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "africas_talking_api_key",
+                &self.africas_talking_api_key.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("africas_talking_username", &self.africas_talking_username)
             .field("africas_talking_sender_id", &self.africas_talking_sender_id)
             .field("smtp_host", &self.smtp_host)
