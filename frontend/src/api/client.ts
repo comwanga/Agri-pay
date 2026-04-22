@@ -488,6 +488,25 @@ export async function verifyLnAddress(address: string): Promise<LnVerifyResponse
   )
 }
 
+// ─── LNURL-pay invoice generation ────────────────────────────────────────────
+
+/**
+ * Step 2 of the LNURL-pay flow.
+ * Calls the platform's LNURL callback endpoint which in turn asks BTCPay
+ * Server to create a real BOLT11 invoice for the given amount.
+ *
+ * slug   — the seller's display name (matched case-insensitively by the backend)
+ * sats   — amount in satoshis (converted to millisats internally)
+ */
+export async function getLnurlInvoice(slug: string, sats: number): Promise<string> {
+  const msats = sats * 1000
+  const data = await request<{ pr: string }>(
+    `/lnurl/pay/${encodeURIComponent(slug)}/callback?amount=${msats}`,
+  )
+  if (!data.pr) throw new Error('No invoice returned')
+  return data.pr
+}
+
 // ─── WebLN payment helper ─────────────────────────────────────────────────────
 
 export const isFediContext = typeof window !== 'undefined' && !!window.nostr
