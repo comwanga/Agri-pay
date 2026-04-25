@@ -14,7 +14,7 @@ use crate::error::{AppError, AppResult};
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
