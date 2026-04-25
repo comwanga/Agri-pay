@@ -123,13 +123,17 @@ async fn query_verify_url(http: &Client, url: &str) -> anyhow::Result<Option<Str
 }
 
 /// Atomically settle the payment and advance the order.
-async fn settle(pool: &PgPool, payment_id: Uuid, order_id: Uuid, raw_preimage: &str) -> anyhow::Result<()> {
+async fn settle(
+    pool: &PgPool,
+    payment_id: Uuid,
+    order_id: Uuid,
+    raw_preimage: &str,
+) -> anyhow::Result<()> {
     let preimage = raw_preimage.trim().to_lowercase();
 
     // Validate: must be 64 hex chars (32 bytes)
-    let preimage_bytes = hex::decode(&preimage).map_err(|e| {
-        anyhow::anyhow!("Invalid preimage from verify URL (not hex): {}", e)
-    })?;
+    let preimage_bytes = hex::decode(&preimage)
+        .map_err(|e| anyhow::anyhow!("Invalid preimage from verify URL (not hex): {}", e))?;
     if preimage_bytes.len() != 32 {
         anyhow::bail!(
             "Invalid preimage length from verify URL: {} bytes (expected 32)",

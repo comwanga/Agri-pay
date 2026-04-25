@@ -361,7 +361,10 @@ impl LnurlClient {
         }
 
         if inv.verify.is_some() {
-            tracing::debug!(has_verify_url = true, "Wallet supports LUD-21 verify — auto-settle enabled");
+            tracing::debug!(
+                has_verify_url = true,
+                "Wallet supports LUD-21 verify — auto-settle enabled"
+            );
         }
 
         Ok(LnurlInvoice {

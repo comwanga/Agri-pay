@@ -303,7 +303,7 @@ pub async fn create_invoice(
         "Lightning invoice created — direct to seller wallet"
     );
 
-    let bolt11     = invoice.bolt11;
+    let bolt11 = invoice.bolt11;
     let verify_url = invoice.verify_url;
 
     // ── Persist payment record ────────────────────────────────────────────────

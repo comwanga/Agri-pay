@@ -212,10 +212,7 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
         );
 
     // ── Lightning tip (seller-direct, no platform custody) ───────────────────
-    let lnurl_routes = Router::new().route(
-        "/lnurl/tip/:seller_id",
-        get(lnurl_server::tip_invoice),
-    );
+    let lnurl_routes = Router::new().route("/lnurl/tip/:seller_id", get(lnurl_server::tip_invoice));
 
     // ── M-Pesa B2C disbursement (seller payouts only — no buyer STK Push) ───
     let mpesa_routes = Router::new()
