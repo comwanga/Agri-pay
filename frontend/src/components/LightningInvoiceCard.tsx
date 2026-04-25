@@ -51,6 +51,8 @@ interface Props {
   hasWebLN: boolean
   isWebLNPaying: boolean
   isRefreshing: boolean
+  /** Backend will auto-detect payment via LUD-21 verify URL — order advances automatically */
+  hasAutoDetect: boolean
 }
 
 // ── SVG ring constants ────────────────────────────────────────────────────────
@@ -61,6 +63,7 @@ const RING_CIRC = 2 * Math.PI * RING_R
 
 export default function LightningInvoiceCard({
   invoice,
+  hasAutoDetect,
   onExpired, onCopy, onWebLN, onManualConfirm, onInPersonConfirm,
   onRefresh, onCancel, setPreimage,
   copied, confirming, preimage, payError,
@@ -271,6 +274,19 @@ export default function LightningInvoiceCard({
         Scan with any Lightning wallet — or copy and paste above.
       </div>
 
+      {/* ── Auto-detect badge ─────────────────────────────────────────────────── */}
+      {hasAutoDetect && (
+        <div className="flex items-center justify-center gap-2 bg-brand-500/8 border border-brand-500/20 rounded-xl px-4 py-2.5">
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-60" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-400" />
+          </span>
+          <p className="text-xs text-brand-300 font-medium">
+            Watching for payment — order advances automatically
+          </p>
+        </div>
+      )}
+
       {/* ── WebLN ───────────────────────────────────────────────────────────── */}
       {hasWebLN && (
         <button
@@ -290,10 +306,12 @@ export default function LightningInvoiceCard({
       {/* Always visible — user may have paid just before the timer expired */}
       <div className="space-y-1.5 border-t border-gray-700 pt-3">
         <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-          Paid with another wallet?
+          {hasAutoDetect ? 'Paid but order not updating?' : 'Paid with another wallet?'}
         </p>
         <label className="text-[11px] text-gray-500">
-          Paste the payment preimage (hex) from your wallet's payment details:
+          {hasAutoDetect
+            ? 'Paste the payment preimage from your wallet to confirm immediately:'
+            : 'Paste the payment preimage (hex) from your wallet\'s payment details:'}
         </label>
         <div className="flex gap-2">
           <input

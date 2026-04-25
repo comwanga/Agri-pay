@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Globe, ShieldCheck, BadgeCheck, MapPin, Check, ShoppingCart, Star, Zap, Heart } from 'lucide-react'
-import { formatKes, getRate } from '../api/client.ts'
+import { formatKes, formatUsd, kesToUsd, getRate } from '../api/client.ts'
+import { useDisplaySettings } from '../context/displaySettings.tsx'
 import { CATEGORY_ICONS } from '../types'
 import { useTranslation } from '../i18n/index.tsx'
 import { useCart } from '../context/cart.tsx'
@@ -41,10 +42,11 @@ export default function ProductCard({ product }: { product: Product }) {
   const { addItem, items }    = useCart()
   const { has, toggle }       = useWishlist()
   const { toast }             = useToast()
+  const { fiatCurrency, update } = useDisplaySettings()
   const [added, setAdded]     = useState(false)
   const wishlisted            = has(product.id)
 
-  // Rate is fetched once and shared across all cards via React Query deduplication
+  // Rate always fetched against KES (base currency stored in DB)
   const { data: rate } = useQuery({
     queryKey: ['rate', 'KES'],
     queryFn: () => getRate('KES'),
@@ -57,8 +59,16 @@ export default function ProductCard({ product }: { product: Product }) {
   const isLowStock   = qty <= 10 && qty > 0
   const isNew        = Date.now() - new Date(product.created_at).getTime() < SEVEN_DAYS
 
-  // Sat equivalent — only shown when rate is available
   const priceKes = parseFloat(product.price_kes)
+  const priceUsd = rate ? kesToUsd(priceKes, rate) : null
+
+  // Primary display price
+  const showUsd  = fiatCurrency === 'USD'
+  const primaryPrice = showUsd && priceUsd !== null
+    ? formatUsd(priceUsd)
+    : formatKes(product.price_kes)
+
+  // Sat equivalent
   const sats = rate && rate.btc_local
     ? Math.ceil((priceKes / parseFloat(rate.btc_local)) * 1e8)
     : null
@@ -128,8 +138,8 @@ export default function ProductCard({ product }: { product: Product }) {
             <Heart className={clsx('w-3.5 h-3.5', wishlisted && 'fill-current')} />
           </button>
           {product.escrow_mode && (
-            <span className="flex items-center gap-1 text-[10px] font-semibold bg-green-900/90 text-green-300 px-1.5 py-0.5 rounded-full backdrop-blur-sm">
-              <ShieldCheck className="w-2.5 h-2.5" /> Escrow
+            <span className="flex items-center gap-1 text-[10px] font-bold bg-purple-900/90 text-purple-300 px-1.5 py-0.5 rounded-full backdrop-blur-sm border border-purple-700/40">
+              <ShieldCheck className="w-2.5 h-2.5" /> Escrow Soon
             </span>
           )}
           {!product.escrow_mode && product.is_global && (
@@ -179,12 +189,23 @@ export default function ProductCard({ product }: { product: Product }) {
           </div>
         )}
 
-        {/* Price — KES bold + sat equivalent */}
+        {/* Price — primary currency + toggle + sats */}
         <div className="flex items-baseline gap-1.5 flex-wrap">
           <span className="text-base font-bold text-gray-100">
-            {formatKes(product.price_kes)}
+            {primaryPrice}
           </span>
           <span className="text-xs text-gray-500">/{product.unit}</span>
+          {/* Currency toggle pill */}
+          <button
+            onClick={e => {
+              e.stopPropagation()
+              update({ fiatCurrency: showUsd ? 'KES' : 'USD' })
+            }}
+            className="text-[9px] font-bold px-1 py-0.5 rounded border border-gray-700 text-gray-600 hover:text-gray-400 hover:border-gray-600 transition-colors leading-none"
+            title={showUsd ? 'Switch to KES' : 'Switch to USD'}
+          >
+            {showUsd ? 'KES' : 'USD'}
+          </button>
           {sats !== null && (
             <span className="flex items-center gap-0.5 text-[11px] text-bitcoin/80 font-medium">
               <Zap className="w-2.5 h-2.5" />

@@ -96,32 +96,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [authed])
 
-  // Polls up to ~1s for window.nostr (Fedi injects it slightly after mount).
-  // getLocalSecretKey is read once before the interval — it won't change during this window.
+  // Fedi injects window.nostr synchronously before React renders — check
+  // immediately so sign-in is instant with no visible loading delay.
+  // For other environments that inject async (browser extensions), fall back
+  // to a short 100 ms poll (max 400 ms) before giving up.
   useEffect(() => {
     if (authed) return
+    const storedKey = getLocalSecretKey()
+    let mounted = true
+
+    function tryLogin() {
+      setConnecting(true)
+      nostrLogin()
+        .then(() => { if (mounted) onSuccess() })
+        .catch(e => {
+          if (!mounted) return
+          setConnecting(false)
+          const msg = e instanceof Error ? e.message : ''
+          if (msg && msg !== 'NO_SIGNER') setError(msg)
+        })
+    }
+
+    // Synchronous check — zero-delay for Fedi mini-app launches
+    if (window.nostr || storedKey) {
+      tryLogin()
+      return () => { mounted = false }
+    }
+
+    // Async poll — browser extensions inject window.nostr after a tick
     let attempts = 0
-    let mounted  = true
-    const MAX        = 5
-    const storedKey  = getLocalSecretKey()
+    const MAX = 4 // 400 ms total, down from 1 000 ms
     const iv = setInterval(() => {
       attempts++
-      const hasSigner = !!window.nostr || !!storedKey
-      if (hasSigner) {
+      if (window.nostr) {
         clearInterval(iv)
-        setConnecting(true)
-        nostrLogin()
-          .then(() => { if (mounted) onSuccess() })
-          .catch(e => {
-            if (!mounted) return
-            setConnecting(false)
-            const msg = e instanceof Error ? e.message : ''
-            if (msg && msg !== 'NO_SIGNER') setError(msg)
-          })
+        if (mounted) tryLogin()
       } else if (attempts >= MAX) {
         clearInterval(iv)
       }
-    }, 200)
+    }, 100) // 100 ms instead of 200 ms
+
     return () => { mounted = false; clearInterval(iv) }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

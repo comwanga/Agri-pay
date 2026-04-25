@@ -16,6 +16,7 @@ const MAX_NAME_LEN: usize = 200;
 const MAX_PIN_LEN: usize = 10;
 const MAX_LOCATION_LEN: usize = 200;
 const MAX_LN_ADDRESS_LEN: usize = 300;
+const MAX_BTC_ADDRESS_LEN: usize = 90;
 
 // ── Phone normalisation (kept here since M-Pesa module is removed) ────────────
 
@@ -49,6 +50,7 @@ pub struct Farmer {
     pub nostr_pubkey: Option<String>,
     pub ln_address: Option<String>,
     pub mpesa_phone: Option<String>,
+    pub btc_address: Option<String>,
     pub location_name: Option<String>,
     pub verified_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -68,6 +70,7 @@ pub struct UpdateFarmerRequest {
     pub pin: Option<String>,
     pub ln_address: Option<String>,
     pub mpesa_phone: Option<String>,
+    pub btc_address: Option<String>,
     pub location_name: Option<String>,
     pub location_lat: Option<f64>,
     pub location_lng: Option<f64>,
@@ -86,7 +89,7 @@ pub async fn list_farmers(
     }
 
     let farmers: Vec<Farmer> = sqlx::query_as(
-        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, verified_at, created_at
+        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, btc_address, location_name, verified_at, created_at
          FROM farmers WHERE deleted_at IS NULL ORDER BY created_at DESC",
     )
     .fetch_all(&state.db)
@@ -152,7 +155,7 @@ pub async fn create_farmer(
     .await?;
 
     let farmer: Farmer = sqlx::query_as(
-        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, verified_at, created_at
+        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, btc_address, location_name, verified_at, created_at
          FROM farmers WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(id)
@@ -173,7 +176,7 @@ pub async fn get_farmer(
     }
 
     let farmer: Option<Farmer> = sqlx::query_as(
-        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, verified_at, created_at
+        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, btc_address, location_name, verified_at, created_at
          FROM farmers WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(id)
@@ -270,6 +273,34 @@ pub async fn update_farmer(
         }
     }
 
+    if let Some(ref btc) = body.btc_address {
+        let btc = btc.trim();
+        if !btc.is_empty() {
+            if btc.len() > MAX_BTC_ADDRESS_LEN {
+                return Err(AppError::BadRequest(format!(
+                    "btc_address exceeds {} characters",
+                    MAX_BTC_ADDRESS_LEN
+                )));
+            }
+            // Accept mainnet (1…, 3…, bc1…) and testnet (m…, n…, 2…, tb1…).
+            // Full checksum validation is left to the buyer's wallet at payment time.
+            let valid_prefix = btc.starts_with('1')
+                || btc.starts_with('3')
+                || btc.to_lowercase().starts_with("bc1")
+                || btc.starts_with('m')
+                || btc.starts_with('n')
+                || btc.starts_with('2')
+                || btc.to_lowercase().starts_with("tb1");
+            if !valid_prefix {
+                return Err(AppError::BadRequest(
+                    "btc_address must be a valid Bitcoin address \
+                     (starts with 1, 3, bc1, or testnet prefix)"
+                        .into(),
+                ));
+            }
+        }
+    }
+
     let pin_hash: Option<String> = if let Some(ref pin) = body.pin {
         Some(
             bcrypt::hash(pin, bcrypt::DEFAULT_COST)
@@ -288,15 +319,23 @@ pub async fn update_farmer(
         ),
     };
 
+    let btc_address_trimmed: Option<String> = body
+        .btc_address
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+
     sqlx::query(
         "UPDATE farmers SET
             name          = COALESCE($2, name),
             pin_hash      = COALESCE($3, pin_hash),
             ln_address    = COALESCE($4, ln_address),
             mpesa_phone   = COALESCE($5, mpesa_phone),
-            location_name = COALESCE($6, location_name),
-            location_lat  = COALESCE($7, location_lat),
-            location_lng  = COALESCE($8, location_lng)
+            btc_address   = COALESCE($6, btc_address),
+            location_name = COALESCE($7, location_name),
+            location_lat  = COALESCE($8, location_lat),
+            location_lng  = COALESCE($9, location_lng)
          WHERE id = $1",
     )
     .bind(id)
@@ -304,6 +343,7 @@ pub async fn update_farmer(
     .bind(&pin_hash)
     .bind(body.ln_address.as_deref().map(str::trim))
     .bind(mpesa_phone_normalised.as_deref())
+    .bind(btc_address_trimmed.as_deref())
     .bind(body.location_name.as_deref().map(str::trim))
     .bind(body.location_lat)
     .bind(body.location_lng)
@@ -311,7 +351,7 @@ pub async fn update_farmer(
     .await?;
 
     let farmer: Farmer = sqlx::query_as(
-        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, verified_at, created_at
+        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, btc_address, location_name, verified_at, created_at
          FROM farmers WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(id)
@@ -593,7 +633,7 @@ pub async fn verify_farmer(
     }
 
     let farmer: Farmer = sqlx::query_as(
-        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, location_name, verified_at, created_at
+        "SELECT id, name, phone, nostr_pubkey, ln_address, mpesa_phone, btc_address, location_name, verified_at, created_at
          FROM farmers WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(id)

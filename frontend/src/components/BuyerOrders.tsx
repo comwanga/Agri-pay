@@ -1,17 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Package, ChevronDown, ChevronUp, ThumbsUp, AlertTriangle,
-  XCircle, Zap, CheckCircle, FileText, Send,
-  Smartphone, Loader2, RotateCcw, Camera, ShieldCheck,
+  XCircle, Zap, FileText, Send,
+  RotateCcw, Camera, ShieldCheck,
 } from 'lucide-react'
 import LightningInvoiceCard from './LightningInvoiceCard.tsx'
 import {
   listOrders, updateOrderStatus, cancelOrder, createInvoice, confirmPayment,
   payWithWebLN, hasWebLN, formatKes, formatSats, ORDER_STATUS_LABELS,
   openDispute, getDisputeEvidence, addDisputeEvidence,
-  initiateMpesaPay, getMpesaPaymentStatus,
 } from '../api/client.ts'
 
 import OrderStatusSteps from './OrderStatusSteps.tsx'
@@ -19,115 +18,7 @@ import MessageThread from './MessageThread.tsx'
 import clsx from 'clsx'
 import type { Order } from '../types'
 
-// ── M-Pesa payment panel ──────────────────────────────────────────────────────
-
-function MpesaPayPanel({ order, onPaid }: { order: Order; onPaid: () => void }) {
-  const [phone, setPhone] = useState('')
-  const [checkoutId, setCheckoutId] = useState<string | null>(null)
-  const [pollStatus, setPollStatus] = useState<string>('pending')
-  const [error, setError] = useState<string | null>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const initiate = useMutation({
-    mutationFn: () => initiateMpesaPay(order.id, phone.trim()),
-    onSuccess: res => {
-      setCheckoutId(res.checkout_request_id)
-      setError(null)
-    },
-    onError: (e: Error) => setError(e.message),
-  })
-
-  // Poll for payment status once STK Push is sent
-  useEffect(() => {
-    if (!checkoutId) return
-    setPollStatus('pending')
-
-    pollRef.current = setInterval(async () => {
-      try {
-        const s = await getMpesaPaymentStatus(checkoutId)
-        setPollStatus(s.status)
-        if (s.status === 'paid') {
-          clearInterval(pollRef.current!)
-          onPaid()
-        } else if (s.status === 'failed' || s.status === 'cancelled') {
-          clearInterval(pollRef.current!)
-          setError(
-            s.status === 'cancelled'
-              ? 'You cancelled the M-Pesa request. Try again.'
-              : 'Payment failed. Please try again or use Lightning.',
-          )
-          setCheckoutId(null)
-        }
-      } catch {
-        // network hiccup — keep polling
-      }
-    }, 3000)
-
-    return () => clearInterval(pollRef.current!)
-  }, [checkoutId, onPaid])
-
-  // Waiting for PIN entry screen
-  if (checkoutId) {
-    return (
-      <div className="space-y-3 bg-gray-800/60 rounded-xl p-4 text-center">
-        <div className="flex items-center justify-center gap-2 text-mpesa">
-          <Smartphone className="w-5 h-5" />
-          <span className="text-sm font-semibold">M-Pesa PIN Prompt Sent</span>
-        </div>
-        <Loader2 className="w-8 h-8 text-mpesa mx-auto animate-spin" />
-        <p className="text-xs text-gray-400 leading-relaxed">
-          Check your phone for the M-Pesa PIN prompt and enter your PIN to complete payment.
-          This page will update automatically.
-        </p>
-        <p className="text-[11px] text-gray-600">
-          Status: <span className="text-gray-400 font-medium">{pollStatus}</span>
-        </p>
-        <button
-          onClick={() => { clearInterval(pollRef.current!); setCheckoutId(null) }}
-          className="text-xs text-gray-500 underline"
-        >
-          Cancel / try again
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-3 bg-gray-800/60 rounded-xl p-4">
-      <p className="text-xs font-semibold text-gray-300 flex items-center gap-1.5">
-        <Smartphone className="w-3.5 h-3.5 text-mpesa" />
-        Pay with M-Pesa
-      </p>
-      <p className="text-[11px] text-gray-500 leading-relaxed">
-        Enter your Safaricom number. You'll receive a PIN prompt on your phone within seconds.
-      </p>
-      <div className="flex gap-2">
-        <input
-          type="tel"
-          placeholder="e.g. 0712 345 678"
-          value={phone}
-          onChange={e => { setPhone(e.target.value); setError(null) }}
-          className="input-base flex-1 text-sm"
-        />
-        <button
-          onClick={() => initiate.mutate()}
-          disabled={initiate.isPending || phone.trim().length < 9}
-          className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-mpesa text-white hover:bg-mpesa/80 transition-colors disabled:opacity-50"
-        >
-          {initiate.isPending
-            ? <Loader2 className="w-4 h-4 animate-spin" />
-            : <Smartphone className="w-4 h-4" />}
-          {initiate.isPending ? 'Sending…' : 'Pay'}
-        </button>
-      </div>
-      {error && (
-        <p className="text-xs text-red-400 bg-red-900/20 border border-red-700/30 rounded-lg px-3 py-2">
-          {error}
-        </p>
-      )}
-    </div>
-  )
-}
+// ── (M-Pesa STK Push removed — Lightning-first, non-custodial marketplace) ───
 
 // ── Lightning payment panel ───────────────────────────────────────────────────
 
@@ -224,7 +115,8 @@ function LightningPayPanel({
   return (
     <LightningInvoiceCard
       invoice={invoice}
-      onExpired={() => {/* expiry handled inside the card; parent doesn't need to act */}}
+      hasAutoDetect={false}
+      onExpired={() => {/* expiry handled inside the card */}}
       onCopy={copyBolt11}
       onWebLN={() => payFedi.mutate()}
       onManualConfirm={handleManualConfirm}
@@ -243,75 +135,25 @@ function LightningPayPanel({
   )
 }
 
-// ── Combined payment method selector ─────────────────────────────────────────
-
-type PayMethod = 'mpesa' | 'lightning'
+// ── Lightning payment panel (sole checkout method) ────────────────────────────
 
 function PayPanel({ order, onPaid }: { order: Order; onPaid: () => void }) {
-  const [method, setMethod] = useState<PayMethod>('mpesa')
-  const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function handleInPerson() {
-    setConfirming(true)
     setError(null)
     try {
       await updateOrderStatus(order.id, { status: 'confirmed', notes: 'In-person pickup confirmed by buyer' })
       onPaid()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Confirmation failed')
-    } finally {
-      setConfirming(false)
     }
   }
 
   return (
     <div className="space-y-3">
-      {/* Method tabs */}
-      <div className="flex gap-1 bg-gray-900 rounded-xl p-1">
-        {([['mpesa', 'M-Pesa', Smartphone], ['lightning', 'Lightning', Zap]] as const).map(
-          ([key, label, Icon]) => (
-            <button
-              key={key}
-              onClick={() => setMethod(key)}
-              className={clsx(
-                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-colors',
-                method === key
-                  ? key === 'mpesa'
-                    ? 'bg-mpesa/20 text-mpesa'
-                    : 'bg-brand-500/20 text-brand-400'
-                  : 'text-gray-500 hover:text-gray-300',
-              )}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              {label}
-            </button>
-          ),
-        )}
-      </div>
-
-      {method === 'mpesa'
-        ? <MpesaPayPanel order={order} onPaid={onPaid} />
-        : <LightningPayPanel order={order} onPaid={onPaid} onInPersonConfirm={handleInPerson} />}
-
-      {/* In-person pickup — shown on M-Pesa tab only; Lightning card has its own section */}
-      {method === 'mpesa' && (
-        <div className="space-y-2 border-t border-gray-700 pt-3">
-          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Collecting in person?</p>
-          <p className="text-[11px] text-gray-500 leading-relaxed">
-            Already received your goods directly from the seller? Confirm here — no payment needed.
-          </p>
-          <button
-            onClick={handleInPerson}
-            disabled={confirming}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-mpesa/20 border border-mpesa/30 text-mpesa hover:bg-mpesa/30 transition-colors disabled:opacity-50"
-          >
-            <CheckCircle className="w-4 h-4" />
-            {confirming ? 'Confirming…' : 'I received my goods'}
-          </button>
-          {error && <p className="text-xs text-red-400">{error}</p>}
-        </div>
-      )}
+      <LightningPayPanel order={order} onPaid={onPaid} onInPersonConfirm={handleInPerson} />
+      {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
   )
 }
@@ -572,17 +414,10 @@ function OrderCard({ order }: { order: Order }) {
             </p>
           )}
 
-          {/* Escrow notice */}
           {order.escrow_mode && (
-            <div className="flex items-start gap-2 bg-green-900/20 border border-green-700/30 rounded-lg px-3 py-2">
-              <ShieldCheck className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-semibold text-green-300">Escrow protected</p>
-                <p className="text-[11px] text-green-500/80 leading-relaxed">
-                  Payment is held by SokoPay and released to the seller only after you confirm receipt.
-                </p>
-              </div>
-            </div>
+            <span className="coming-soon-pill">
+              <ShieldCheck className="w-3 h-3" /> Escrow Soon
+            </span>
           )}
 
           {/* Pay panel */}

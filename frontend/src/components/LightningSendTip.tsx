@@ -11,14 +11,13 @@ import clsx from 'clsx'
 
 interface Props {
   sellerName: string
-  /** Seller's name used as the LNURL slug (backend matches case-insensitively) */
-  lnurlSlug: string
+  sellerId: string
 }
 
 const PRESET_AMOUNTS = [100, 500, 1000, 5000]
 const DEBOUNCE_MS    = 600
 
-export default function LightningSendTip({ sellerName, lnurlSlug }: Props) {
+export default function LightningSendTip({ sellerName, sellerId }: Props) {
   const [open, setOpen]           = useState(false)
   const [amount, setAmount]       = useState('')
   const [invoice, setInvoice]     = useState<string | null>(null)
@@ -55,7 +54,7 @@ export default function LightningSendTip({ sellerName, lnurlSlug }: Props) {
 
     debounceRef.current = setTimeout(async () => {
       try {
-        const bolt11 = await getLnurlInvoice(lnurlSlug, sats)
+        const bolt11 = await getLnurlInvoice(sellerId, sats)
         setInvoice(bolt11)
         setError(null)
       } catch (e) {
@@ -68,7 +67,7 @@ export default function LightningSendTip({ sellerName, lnurlSlug }: Props) {
 
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [amount, lnurlSlug, open])
+  }, [amount, sellerId, open])
 
   function selectAmount(s: number) {
     setAmount(String(s))
@@ -100,8 +99,8 @@ export default function LightningSendTip({ sellerName, lnurlSlug }: Props) {
 
   // What to show in the QR panel
   const qrValue = invoice
-    ? invoice.toUpperCase()                      // real BOLT11 — uppercase for better QR density
-    : `lightning:${lnurlSlug}@sokopay.app`      // fallback: Lightning address
+    ? invoice.toUpperCase()   // real BOLT11 — uppercase for better QR density
+    : 'lightning:'            // placeholder until invoice is fetched
 
   const qrLabel = invoice ? 'Scan to pay exact amount' : 'Scan to open in wallet'
 
@@ -176,26 +175,35 @@ export default function LightningSendTip({ sellerName, lnurlSlug }: Props) {
                 invoice  ? 'border-bitcoin/60' : 'border-gray-200',
               )}>
                 {loading ? (
-                  <div className="w-[110px] h-[110px] flex items-center justify-center bg-gray-100 rounded-lg">
+                  <div className="w-[180px] h-[180px] flex items-center justify-center bg-gray-100 rounded-lg">
                     <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
                   </div>
                 ) : (
                   <>
+                    {/*
+                      size=180 — each QR module ≈3.2 px, comfortably above the
+                      ~2.5 px minimum most phone cameras resolve reliably.
+
+                      level="H" — 30% error correction. Required any time a logo
+                      overlays the QR; 'M' (15%) would be less than the ~10%
+                      occlusion the logo creates, risking silent scan failures.
+                    */}
                     <QRCodeSVG
                       value={qrValue}
-                      size={110}
-                      level={invoice ? 'M' : 'L'}
+                      size={180}
+                      level="H"
                     />
-                    {/* SokoPay logo overlay */}
+                    {/* Logo overlay: w-7 = 28px over 180px QR = ~11% occlusion,
+                        well within the 30% H-level recovery budget. */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-8 h-8 rounded-lg overflow-hidden bg-white ring-2 ring-white shadow-sm">
+                      <div className="w-7 h-7 rounded-lg overflow-hidden bg-white ring-2 ring-white shadow-sm">
                         <img src="/logo.svg" alt="" className="w-full h-full" draggable={false} />
                       </div>
                     </div>
                   </>
                 )}
               </div>
-              <p className="text-[10px] text-gray-600 text-center max-w-[120px]">{qrLabel}</p>
+              <p className="text-[10px] text-gray-600 text-center max-w-[180px]">{qrLabel}</p>
               {invoice && (
                 <span className="text-[10px] font-semibold text-bitcoin bg-bitcoin/10 border border-bitcoin/20 px-2 py-0.5 rounded-full">
                   ⚡ {sats.toLocaleString()} sats

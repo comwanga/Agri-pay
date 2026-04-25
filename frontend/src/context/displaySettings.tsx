@@ -24,7 +24,7 @@ interface DisplaySettingsContextValue extends DisplaySettings {
 
 const DEFAULTS: DisplaySettings = {
   btcUnit:      'sats',
-  fiatCurrency: 'KES',
+  fiatCurrency: 'USD',
   theme:        'system',
   language:     'English',
 }

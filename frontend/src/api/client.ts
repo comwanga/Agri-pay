@@ -12,8 +12,6 @@ import type {
   LoginRequest,
   LoginResponse,
   LnVerifyResponse,
-  MpesaStkPushResponse,
-  MpesaStatusResponse,
   OpenDisputeRow,
   Order,
   OrderStatus,
@@ -454,26 +452,6 @@ export async function getPaymentForOrder(orderId: string): Promise<PaymentRecord
   return request<PaymentRecord>(`/payments/order/${orderId}`)
 }
 
-// ─── M-Pesa ───────────────────────────────────────────────────────────────────
-
-export async function initiateMpesaPay(
-  orderId: string,
-  phone: string,
-): Promise<MpesaStkPushResponse> {
-  return request<MpesaStkPushResponse>('/payments/mpesa/stk-push', {
-    method: 'POST',
-    body: JSON.stringify({ order_id: orderId, phone }),
-  })
-}
-
-export async function getMpesaPaymentStatus(
-  checkoutRequestId: string,
-): Promise<MpesaStatusResponse> {
-  return request<MpesaStatusResponse>(
-    `/payments/mpesa/${encodeURIComponent(checkoutRequestId)}/status`,
-  )
-}
-
 // ─── Oracle ───────────────────────────────────────────────────────────────────
 
 export async function getRate(currency = 'KES'): Promise<ExchangeRate> {
@@ -491,17 +469,16 @@ export async function verifyLnAddress(address: string): Promise<LnVerifyResponse
 // ─── LNURL-pay invoice generation ────────────────────────────────────────────
 
 /**
- * Step 2 of the LNURL-pay flow.
- * Calls the platform's LNURL callback endpoint which in turn asks BTCPay
- * Server to create a real BOLT11 invoice for the given amount.
+ * Fetch a tip BOLT11 invoice from a seller's Lightning wallet via the
+ * platform's seller-direct LNURL proxy. Funds go straight to the seller.
  *
- * slug   — the seller's display name (matched case-insensitively by the backend)
- * sats   — amount in satoshis (converted to millisats internally)
+ * sellerId — the seller's UUID
+ * sats     — amount in satoshis (converted to millisats internally)
  */
-export async function getLnurlInvoice(slug: string, sats: number): Promise<string> {
+export async function getLnurlInvoice(sellerId: string, sats: number): Promise<string> {
   const msats = sats * 1000
   const data = await request<{ pr: string }>(
-    `/lnurl/pay/${encodeURIComponent(slug)}/callback?amount=${msats}`,
+    `/lnurl/tip/${encodeURIComponent(sellerId)}?amount=${msats}`,
   )
   if (!data.pr) throw new Error('No invoice returned')
   return data.pr
@@ -703,6 +680,25 @@ export function formatKes(value: string | number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`
+}
+
+export function formatUsd(value: number): string {
+  return `$${value.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+/**
+ * Convert a KES price to USD using the exchange rate.
+ * rate.btc_local is BTC/KES; rate.btc_usd is BTC/USD.
+ * price_usd = price_kes × (btc_usd / btc_kes)
+ */
+export function kesToUsd(priceKes: number, rate: { btc_usd: string; btc_local: string }): number {
+  const btcUsd = parseFloat(rate.btc_usd)
+  const btcKes = parseFloat(rate.btc_local)
+  if (!btcKes) return 0
+  return priceKes * (btcUsd / btcKes)
 }
 
 export function formatSats(sats: number): string {

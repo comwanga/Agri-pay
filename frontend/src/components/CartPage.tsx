@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ShoppingCart, Trash2, Plus, Minus, ArrowLeft,
-  Package, Zap, Smartphone, ShieldCheck, ShoppingBag,
+  Package, Zap, ShieldCheck, ShoppingBag,
   MapPin, Loader2, CheckCircle2, AlertCircle, Tag, X,
 } from 'lucide-react'
 import { formatKes } from '../api/client.ts'
@@ -138,8 +138,8 @@ export default function CartPage() {
                       {product.seller_name}
                     </button>
                     {product.escrow_mode && (
-                      <span className="ml-2 inline-flex items-center gap-1 text-green-400">
-                        <ShieldCheck className="w-3 h-3" /> Escrow
+                      <span className="ml-2 coming-soon-pill">
+                        <ShieldCheck className="w-3 h-3" /> Escrow Soon
                       </span>
                     )}
                   </p>
@@ -315,7 +315,7 @@ export default function CartPage() {
             </button>
 
             <p className="text-[11px] text-gray-600 text-center">
-              Each item creates a separate order. Pay via Lightning or M-Pesa on the Orders page.
+              Each item creates a separate Lightning invoice on the Orders page.
             </p>
 
             <div className="pt-2 border-t border-gray-800">
@@ -324,11 +324,8 @@ export default function CartPage() {
                 <span className="flex items-center gap-1 text-[11px] font-medium text-bitcoin bg-bitcoin/10 border border-bitcoin/20 px-2 py-1 rounded-lg">
                   <Zap className="w-3 h-3" /> Lightning
                 </span>
-                <span className="flex items-center gap-1 text-[11px] font-medium text-mpesa bg-mpesa/10 border border-mpesa/20 px-2 py-1 rounded-lg">
-                  <Smartphone className="w-3 h-3" /> M-Pesa
-                </span>
-                <span className="flex items-center gap-1 text-[11px] font-medium text-green-400 bg-green-900/20 border border-green-700/30 px-2 py-1 rounded-lg">
-                  <ShieldCheck className="w-3 h-3" /> Escrow
+                <span className="coming-soon-pill">
+                  <ShieldCheck className="w-3 h-3" /> Escrow Soon
                 </span>
               </div>
             </div>

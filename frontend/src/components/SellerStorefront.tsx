@@ -153,10 +153,10 @@ export default function SellerStorefront() {
           </div>
         </div>
 
-        {/* Lightning tip — slug is the seller's name, matched case-insensitively by backend */}
+        {/* Lightning tip — direct to seller's wallet via /api/lnurl/tip/:id */}
         <LightningSendTip
           sellerName={seller.name}
-          lnurlSlug={seller.name}
+          sellerId={seller.id}
         />
       </div>
 

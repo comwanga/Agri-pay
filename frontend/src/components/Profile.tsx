@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient, useQuery } from '@tanstack/react-query'
 import {
-  User, Zap, MapPin, Smartphone, Check, AlertCircle, ExternalLink,
+  User, Zap, MapPin, Check, AlertCircle,
   Loader2, ShieldCheck, RefreshCw, CheckCircle2, XCircle, Settings, ChevronRight, Code2,
-  Gift, Copy, Share2,
+  Gift, Copy, Share2, Bitcoin,
 } from 'lucide-react'
 import { updateProfile, verifyLnAddress, isFediContext, getMyReferralCode } from '../api/client.ts'
 import { useCurrentFarmer } from '../hooks/useCurrentFarmer.ts'
@@ -35,11 +35,13 @@ function Field({
 interface LightningFieldProps {
   value: string
   savedAddress: string | null   // what's currently persisted in DB
+  placeholder?: string
+  formatHint?: React.ReactNode
   onChange: (v: string) => void
   onVerified: (info: LnVerifyResponse | null) => void
 }
 
-function LightningAddressField({ value, savedAddress, onChange, onVerified }: LightningFieldProps) {
+function LightningAddressField({ value, savedAddress, placeholder, formatHint, onChange, onVerified }: LightningFieldProps) {
   const [status, setStatus] = useState<'idle' | 'verifying' | 'ok' | 'error'>('idle')
   const [info, setInfo] = useState<LnVerifyResponse | null>(null)
   const [errMsg, setErrMsg] = useState<string | null>(null)
@@ -88,7 +90,7 @@ function LightningAddressField({ value, savedAddress, onChange, onVerified }: Li
             type="text"
             value={value}
             onChange={e => handleChange(e.target.value)}
-            placeholder="you@domain.com or lnurl1dp68…"
+            placeholder={placeholder ?? 'you@domain.com or lnurl1dp68…'}
             inputMode="email"
             autoComplete="off"
             className={clsx(
@@ -174,19 +176,12 @@ function LightningAddressField({ value, savedAddress, onChange, onVerified }: Li
       {/* Format hints */}
       {!value && (
         <div className="text-[11px] text-gray-600 space-y-0.5">
-          <p>Accepted formats:</p>
-          <p className="font-mono pl-2">you@wallet.com  — Lightning Address</p>
-          <p className="font-mono pl-2">lnurl1dp68…     — bech32 LNURL string</p>
-          {isFediContext && (
-            <a
-              href="https://www.fedi.xyz"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-brand-400 hover:text-brand-300 mt-1"
-            >
-              <ExternalLink className="w-3 h-3" />
-              Fedi: Settings → Federation → Lightning Address
-            </a>
+          {formatHint ?? (
+            <>
+              <p>Accepted formats:</p>
+              <p className="font-mono pl-2">you@wallet.com  — Lightning Address</p>
+              <p className="font-mono pl-2">lnurl1dp68…     — bech32 LNURL string</p>
+            </>
           )}
         </div>
       )}
@@ -212,22 +207,39 @@ export default function Profile() {
   })
 
   const [name, setName] = useState('')
-  const [lnAddress, setLnAddress] = useState('')
-  const [lnVerifyInfo, setLnVerifyInfo] = useState<LnVerifyResponse | null>(null)
-  const [mpesaPhone, setMpesaPhone] = useState('')
-  const [locationName, setLocationName] = useState('')
-  const [locationLat, setLocationLat] = useState<number | undefined>()
-  const [locationLng, setLocationLng] = useState<number | undefined>()
-  const [locating, setLocating] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+
+  // Lightning Address (user@domain.com) and LNURL (lnurl1…) are stored in the
+  // same backend `ln_address` field. We show them in separate boxes for clarity.
+  // Format is auto-detected on load; on save, whichever is filled wins
+  // (Lightning Address takes priority if somehow both are filled).
+  const [lnAddress, setLnAddress]           = useState('')
+  const [lnVerifyInfo, setLnVerifyInfo]     = useState<LnVerifyResponse | null>(null)
+  const [lnurl, setLnurl]                   = useState('')
+  const [lnurlVerifyInfo, setLnurlVerifyInfo] = useState<LnVerifyResponse | null>(null)
+
+  const [btcAddress, setBtcAddress]         = useState('')
+  const [btcAddressError, setBtcAddressError] = useState<string | null>(null)
+  const [locationName, setLocationName]     = useState('')
+  const [locationLat, setLocationLat]       = useState<number | undefined>()
+  const [locationLng, setLocationLng]       = useState<number | undefined>()
+  const [locating, setLocating]             = useState(false)
+  const [saving, setSaving]                 = useState(false)
+  const [saved, setSaved]                   = useState(false)
+  const [error, setError]                   = useState<string | null>(null)
 
   useEffect(() => {
     if (farmer) {
       setName(farmer.name ?? '')
-      setLnAddress(farmer.ln_address ?? '')
-      setMpesaPhone(farmer.mpesa_phone ?? '')
+      // Detect format and populate the correct box
+      const saved = farmer.ln_address ?? ''
+      if (saved.toLowerCase().startsWith('lnurl1')) {
+        setLnurl(saved)
+        setLnAddress('')
+      } else {
+        setLnAddress(saved)
+        setLnurl('')
+      }
+      setBtcAddress(farmer.btc_address ?? '')
       setLocationName(farmer.location_name ?? '')
     }
   }, [farmer])
@@ -236,14 +248,42 @@ export default function Profile() {
     e.preventDefault()
     if (!farmerId) return
 
-    const trimmedLn = lnAddress.trim()
+    const trimmedLnAddress = lnAddress.trim()
+    const trimmedLnurl     = lnurl.trim()
 
-    // Require verification if the address changed from what's in the DB
-    const addressChanged = trimmedLn !== (farmer?.ln_address ?? '').trim()
-    if (trimmedLn && addressChanged && !lnVerifyInfo) {
+    // Effective ln_address: prefer Lightning Address over LNURL if both filled
+    const trimmedLn = trimmedLnAddress || trimmedLnurl
+
+    // Require verification if the ln_address value changed from what's in the DB
+    const savedLn = farmer?.ln_address ?? ''
+    const lnChanged = trimmedLn !== savedLn.trim()
+
+    if (trimmedLnAddress && lnChanged && !lnVerifyInfo) {
       setError('Please verify your Lightning Address before saving.')
       return
     }
+    if (trimmedLnurl && !trimmedLnAddress && lnChanged && !lnurlVerifyInfo) {
+      setError('Please verify your LNURL before saving.')
+      return
+    }
+
+    // Client-side Bitcoin address format check
+    const trimmedBtc = btcAddress.trim()
+    if (trimmedBtc) {
+      const isValid =
+        trimmedBtc.startsWith('1') ||
+        trimmedBtc.startsWith('3') ||
+        trimmedBtc.toLowerCase().startsWith('bc1') ||
+        trimmedBtc.startsWith('m') ||
+        trimmedBtc.startsWith('n') ||
+        trimmedBtc.startsWith('2') ||
+        trimmedBtc.toLowerCase().startsWith('tb1')
+      if (!isValid || trimmedBtc.length < 25 || trimmedBtc.length > 90) {
+        setBtcAddressError('Enter a valid Bitcoin address (starts with 1, 3, or bc1)')
+        return
+      }
+    }
+    setBtcAddressError(null)
 
     setSaving(true)
     setError(null)
@@ -253,7 +293,7 @@ export default function Profile() {
       await updateProfile(farmerId, {
         name: name.trim() || undefined,
         ln_address: trimmedLn || undefined,
-        mpesa_phone: mpesaPhone.trim() || undefined,
+        btc_address: trimmedBtc || undefined,
         location_name: locationName.trim() || undefined,
         location_lat: locationLat,
         location_lng: locationLng,
@@ -310,38 +350,41 @@ export default function Profile() {
         </h1>
         <p className="text-sm text-gray-400 mt-0.5">
           {isSetup
-            ? 'Add your Lightning Address so buyers can pay you directly.'
+            ? 'Add your Lightning Address or LNURL so buyers can pay you directly.'
             : 'Manage your account and payment settings.'}
         </p>
       </div>
 
-      {/* Fedi context: prominent LNURL setup prompt */}
+      {/* Fedi context: LNURL setup prompt with correct navigation */}
       {isFediContext && !farmer.ln_address && (
         <div className="flex gap-3 items-start bg-brand-500/10 border border-brand-500/30 rounded-xl p-4">
           <Zap className="w-4 h-4 text-brand-400 shrink-0 mt-0.5" />
           <div className="space-y-2 text-sm">
-            <p className="text-brand-300 font-semibold">Add your LNURL to receive payments</p>
+            <p className="text-brand-300 font-semibold">Copy your LNURL from Fedi to receive payments</p>
             <p className="text-brand-400/70 text-xs leading-relaxed">
-              SokoPay detected your Nostr wallet. Paste your LNURL below so buyers can pay you instantly — funds go straight to your wallet with no custody.
+              Fedi detected! Paste your LNURL in the box below — buyers pay you directly with no platform custody.
             </p>
-            <div className="text-xs text-gray-400 space-y-0.5">
-              <p className="font-medium text-gray-300">Where to find your LNURL:</p>
-              <p>• <strong className="text-gray-200">Fedi app</strong> → your federation → Lightning Address</p>
-              <p>• <strong className="text-gray-200">Alby</strong> → Your account → Lightning Address / LNURL</p>
-              <p>• Any Lightning wallet that supports LNURL-pay</p>
+            <div className="text-xs space-y-1">
+              <p className="font-semibold text-gray-300">Find your LNURL in Fedi:</p>
+              <div className="flex items-center gap-1.5 font-mono text-brand-400 bg-brand-500/10 border border-brand-500/20 rounded-lg px-3 py-2">
+                Wallet → Receive → LNURL → Copy
+              </div>
+              <p className="text-gray-600 text-[11px]">
+                Fedi uses LNURL, not Lightning Addresses. Paste it in the LNURL box below.
+              </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Generic Lightning Address required banner (non-Fedi) */}
+      {/* Generic banner (non-Fedi): Lightning Address or LNURL required */}
       {!isFediContext && !farmer.ln_address && (
         <div className="flex gap-3 items-start bg-yellow-900/20 border border-yellow-700/30 rounded-xl p-4">
           <AlertCircle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
           <div className="space-y-1 text-sm">
-            <p className="text-yellow-300 font-semibold">Lightning Address required to receive payments</p>
+            <p className="text-yellow-300 font-semibold">Add a Lightning Address or LNURL to receive payments</p>
             <p className="text-yellow-500/80 text-xs">
-              Buyers pay directly to your Lightning Address or LNURL — no platform custody.
+              Buyers pay you directly — SokoPay never holds your funds.
             </p>
           </div>
         </div>
@@ -394,38 +437,131 @@ export default function Profile() {
           </div>
         </Field>
 
-        <Field label="Lightning Address / LNURL">
+        {/* ── Payment Receiving ─────────────────────────────────────────────────── */}
+        <div className="space-y-1">
+          <p className="text-xs font-bold text-gray-300 uppercase tracking-wide">How buyers pay you</p>
+          <p className="text-[11px] text-gray-500">
+            Add at least one Lightning option. Buyers pay you directly — SokoPay never holds funds.
+          </p>
+        </div>
+
+        {/* Box 1: Lightning Address */}
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-brand-500/15 border border-brand-500/25 flex items-center justify-center shrink-0">
+              <Zap className="w-3.5 h-3.5 text-brand-400" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-100">Lightning Address</p>
+              <p className="text-[11px] text-gray-500">Email-style address from your wallet</p>
+            </div>
+          </div>
           <LightningAddressField
             value={lnAddress}
-            savedAddress={farmer.ln_address}
+            savedAddress={farmer.ln_address?.includes('@') ? farmer.ln_address : null}
+            placeholder="you@wallet.com"
+            formatHint={<>
+              <p className="font-mono pl-2">you@wallet.com  — Alby, Fedi, WoS, Coinos…</p>
+            </>}
             onChange={v => { setLnAddress(v); setSaved(false) }}
-            onVerified={setLnVerifyInfo}
+            onVerified={info => { setLnVerifyInfo(info); if (info) setLnurlVerifyInfo(null) }}
           />
-        </Field>
+        </div>
 
-        <Field
-          label="M-Pesa Number (for receiving payments)"
-          hint="Kenyan mobile number where you receive M-Pesa payments. E.g. 0712 345 678"
-        >
-          <div className="relative">
-            <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
-            <input
-              type="tel"
-              value={mpesaPhone}
-              onChange={e => { setMpesaPhone(e.target.value); setSaved(false) }}
-              placeholder="0712 345 678"
-              inputMode="tel"
-              autoComplete="tel"
-              className="input-base pl-9"
-            />
+        {/* Divider */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-gray-800" />
+          <span className="text-[11px] text-gray-600 font-medium">or</span>
+          <div className="flex-1 h-px bg-gray-800" />
+        </div>
+
+        {/* Box 2: LNURL */}
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-purple-900/40 border border-purple-700/30 flex items-center justify-center shrink-0">
+              <Zap className="w-3.5 h-3.5 text-purple-400" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-100">LNURL</p>
+              <p className="text-[11px] text-gray-500">bech32 string from wallets without an email address</p>
+            </div>
           </div>
-          {farmer.mpesa_phone && mpesaPhone.trim() === farmer.mpesa_phone && (
-            <p className="text-xs text-mpesa flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              {farmer.mpesa_phone} — saved
-            </p>
-          )}
-        </Field>
+          <LightningAddressField
+            value={lnurl}
+            savedAddress={farmer.ln_address?.toLowerCase().startsWith('lnurl1') ? farmer.ln_address : null}
+            placeholder="lnurl1dp68gurn…"
+            formatHint={<>
+              <p className="font-mono pl-2">lnurl1dp68…  — bech32-encoded LNURL string</p>
+              {isFediContext && (
+                <div className="mt-1.5 flex items-start gap-1.5 bg-brand-500/8 border border-brand-500/20 rounded-lg px-2.5 py-2">
+                  <span className="text-brand-400 shrink-0 mt-0.5">⚡</span>
+                  <div>
+                    <p className="text-brand-300 font-semibold">In Fedi:</p>
+                    <p className="text-brand-400/80 mt-0.5">
+                      Wallet → Receive → LNURL → Copy
+                    </p>
+                    <p className="text-gray-600 mt-0.5">
+                      Fedi uses LNURL, not Lightning Addresses.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </>}
+            onChange={v => { setLnurl(v); setSaved(false) }}
+            onVerified={info => { setLnurlVerifyInfo(info); if (info) setLnVerifyInfo(null) }}
+          />
+        </div>
+
+        {/* Box 3: On-chain Bitcoin */}
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-bitcoin/10 border border-bitcoin/20 flex items-center justify-center shrink-0">
+              <Bitcoin className="w-3.5 h-3.5 text-bitcoin" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-100">On-chain Bitcoin Address</p>
+              <p className="text-[11px] text-gray-500">Optional — for buyers who prefer on-chain BTC</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="relative">
+              <input
+                type="text"
+                value={btcAddress}
+                onChange={e => { setBtcAddress(e.target.value); setBtcAddressError(null); setSaved(false) }}
+                placeholder="bc1q… or 1… or 3…"
+                autoComplete="off"
+                spellCheck={false}
+                className={clsx(
+                  'input-base font-mono text-sm',
+                  btcAddressError && 'border-red-700/60 focus:border-red-500',
+                  !btcAddressError && btcAddress.trim() && btcAddress.trim() === (farmer?.btc_address ?? '') && 'border-bitcoin/30',
+                )}
+              />
+              {!btcAddressError && btcAddress.trim() && btcAddress.trim() === (farmer?.btc_address ?? '') && (
+                <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bitcoin/70 pointer-events-none" />
+              )}
+            </div>
+            {btcAddressError && (
+              <p className="text-xs text-red-400 flex items-center gap-1">
+                <XCircle className="w-3.5 h-3.5 shrink-0" /> {btcAddressError}
+              </p>
+            )}
+            {!btcAddress && (
+              <div className="text-[11px] text-gray-600 space-y-0.5 pl-1">
+                <p className="font-mono">bc1q… / bc1p…  — SegWit / Taproot</p>
+                <p className="font-mono">3…              — P2SH</p>
+                <p className="font-mono">1…              — Legacy</p>
+              </div>
+            )}
+            {farmer?.btc_address && btcAddress.trim() === farmer.btc_address && (
+              <p className="text-xs text-bitcoin/70 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {farmer.btc_address.slice(0, 14)}…{farmer.btc_address.slice(-8)} — saved
+              </p>
+            )}
+          </div>
+        </div>
 
         <Field
           label="Your location"
@@ -455,7 +591,8 @@ export default function Profile() {
             </button>
           </div>
           {(locationLat || farmer.location_name) && (
-            <p className="text-xs text-mpesa">
+            <p className="text-xs text-brand-400 flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
               {locationLat ? 'GPS location captured' : `Saved: ${farmer.location_name}`}
             </p>
           )}

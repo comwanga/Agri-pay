@@ -4,7 +4,6 @@ use crate::farmers::api_keys as farmer_api_keys;
 use crate::farmers::handlers as farmer_handlers;
 use crate::farmers::referrals;
 use crate::lnurl::server as lnurl_server;
-use crate::mpesa::handlers as mpesa_handlers;
 use crate::oracle::handlers as oracle_handlers;
 use crate::orders::handlers as order_handlers;
 use crate::payments::handlers as payment_handlers;
@@ -212,30 +211,14 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
             get(payment_handlers::list_payment_history),
         );
 
-    // ── LNURL-pay server + BTCPay webhook ────────────────────────────────────
-    let lnurl_routes = Router::new()
-        .route(
-            "/lnurl/pay/:slug/callback",
-            get(lnurl_server::lnurlp_callback),
-        )
-        .route("/webhooks/btcpay", post(lnurl_server::btcpay_webhook));
+    // ── Lightning tip (seller-direct, no platform custody) ───────────────────
+    let lnurl_routes = Router::new().route(
+        "/lnurl/tip/:seller_id",
+        get(lnurl_server::tip_invoice),
+    );
 
-    // ── M-Pesa STK Push + B2C disbursement ───────────────────────────────────
-    // Callback and B2C result/timeout routes have no JWT auth (Daraja calls
-    // them server-to-server from Safaricom's IP range).
+    // ── M-Pesa B2C disbursement (seller payouts only — no buyer STK Push) ───
     let mpesa_routes = Router::new()
-        .route(
-            "/payments/mpesa/stk-push",
-            post(mpesa_handlers::initiate_stk_push),
-        )
-        .route(
-            "/payments/mpesa/callback",
-            post(mpesa_handlers::mpesa_callback),
-        )
-        .route(
-            "/payments/mpesa/:checkout_id/status",
-            get(mpesa_handlers::get_mpesa_status),
-        )
         .route(
             "/payments/mpesa/b2c/result",
             post(crate::mpesa::b2c::b2c_result),

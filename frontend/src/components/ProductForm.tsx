@@ -306,21 +306,21 @@ export default function ProductForm() {
             </p>
           </div>
 
-          {/* Escrow mode */}
-          <label className="flex items-center gap-3 cursor-pointer select-none">
-            <div
-              onClick={() => setEscrowMode(v => !v)}
-              className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${escrowMode ? 'bg-brand-500' : 'bg-gray-700'}`}
-            >
-              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${escrowMode ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          {/* Escrow mode — Coming Soon */}
+          <div className="flex items-center gap-3 select-none opacity-55 cursor-not-allowed">
+            <div className="w-9 h-5 rounded-full bg-gray-700 relative shrink-0">
+              <span className="absolute top-0.5 translate-x-0.5 w-4 h-4 rounded-full bg-gray-500 shadow" />
             </div>
-            <div>
-              <p className="text-xs font-semibold text-gray-200">Escrow protected</p>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                Payment is held by SokoPay until the buyer confirms receipt. Protects both parties.
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-xs font-semibold text-gray-200">Escrow protection</p>
+                <span className="coming-soon-pill">Coming Soon</span>
+              </div>
+              <p className="text-[11px] text-gray-500 leading-relaxed mt-0.5">
+                Funds held securely until buyer confirms delivery. Launching soon.
               </p>
             </div>
-          </label>
+          </div>
 
           {/* Location + Country */}
           <div className="grid grid-cols-2 gap-3">

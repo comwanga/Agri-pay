@@ -31,7 +31,7 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::Config;
-use crate::lnurl::{server as lnurl_server, LnurlClient};
+use crate::lnurl::LnurlClient;
 use crate::mpesa::client::{DarajaEnv, MpesaClient};
 use crate::oracle::RateOracle;
 use crate::state::AppState;
@@ -173,6 +173,11 @@ async fn main() -> Result<()> {
     tokio::spawn(workers::low_stock::run(state.clone()));
     tracing::info!("Low-stock alert worker started (poll interval: 10m)");
 
+    // LUD-21 verify-URL worker: polls seller wallets to auto-settle invoices.
+    // Not exit-critical — buyers can still paste preimages or use WebLN.
+    tokio::spawn(workers::invoice_verify::run(pool.clone(), http.clone()));
+    tracing::info!("Invoice verify worker started (poll interval: 10s)");
+
     // ── CORS ──────────────────────────────────────────────────────────────────
     let cors = build_cors(&config);
 
@@ -180,10 +185,6 @@ async fn main() -> Result<()> {
     // /.well-known/lnurlp/{slug} is mounted at root (not under /api)
     // as required by the LNURL-pay spec (LUD-06).
     let app = Router::new()
-        .route(
-            "/.well-known/lnurlp/:slug",
-            axum::routing::get(lnurl_server::lnurlp_descriptor),
-        )
         .nest("/api", routes::router(state.clone()))
         .nest_service("/uploads", ServeDir::new(&config.upload_dir))
         .layer(cors)

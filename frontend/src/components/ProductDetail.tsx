@@ -4,17 +4,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, MapPin, Package, Truck, Zap,
   CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Check,
-  Smartphone, Loader2, ShoppingCart, BadgeCheck, ShieldCheck,
+  Loader2, ShoppingCart, BadgeCheck, ShieldCheck,
   Heart, TrendingUp, ChevronRight as ChevronRightIcon, Share2,
 } from 'lucide-react'
 import {
   getProduct, getOrder, createOrder, createInvoice, confirmPayment,
-  updateOrderStatus, payWithWebLN, hasWebLN, formatKes,
-  rateProduct, initiateMpesaPay, getMpesaPaymentStatus, listProducts,
+  updateOrderStatus, payWithWebLN, hasWebLN, formatKes, formatUsd, kesToUsd, getRate,
+  rateProduct, listProducts,
 } from '../api/client.ts'
 import { useAuth } from '../context/auth.tsx'
 import { useCart } from '../context/cart.tsx'
 import { useWishlist } from '../context/wishlist.tsx'
+import { useDisplaySettings } from '../context/displaySettings.tsx'
 import { useToast } from '../context/toast.tsx'
 import { useRecentlyViewed } from '../hooks/useRecentlyViewed.ts'
 import LightningInvoiceCard from './LightningInvoiceCard.tsx'
@@ -22,25 +23,21 @@ import StarRating from './StarRating.tsx'
 import ProductCard from './ProductCard.tsx'
 import ShareProductModal from './ShareProductModal.tsx'
 import ReceiptDownloadButton from './PaymentReceipt.tsx'
-import { usePaymentPreference } from '../hooks/usePaymentPreference.ts'
 import clsx from 'clsx'
 
-type BuyStep = 'details' | 'location' | 'method' | 'invoice' | 'paying' | 'mpesa-pending' | 'done'
-type PayMethod = 'lightning' | 'mpesa'
+type BuyStep = 'details' | 'location' | 'invoice' | 'paying' | 'done'
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { authed, connecting, connect } = useAuth()
+  const { fiatCurrency, update: updateDisplay } = useDisplaySettings()
   const { addItem, items } = useCart()
   const [cartAdded, setCartAdded] = useState(false)
 
   const [imgIdx, setImgIdx] = useState(0)
   const [buyStep, setBuyStep] = useState<BuyStep | null>(null)
-  const [payMethod, setPayMethod] = useState<PayMethod>(() =>
-    localStorage.getItem('sokopay_pay_method') === 'mpesa' ? 'mpesa' : 'lightning',
-  )
 
   // Buy form state
   const [quantity, setQuantity] = useState('1')
@@ -51,20 +48,13 @@ export default function ProductDetail() {
   // Lightning state
   const [orderId, setOrderId] = useState<string | null>(null)
   const [invoice, setInvoice] = useState<{
-    payment_id: string; bolt11: string; amount_sats: number; expires_at: string
+    payment_id: string; bolt11: string; amount_sats: number; expires_at: string; has_auto_detect: boolean
   } | null>(null)
   const [invoiceExpired, setInvoiceExpired] = useState(false)
   const [payError, setPayError] = useState<string | null>(null)
   const [preimage, setPreimage] = useState('')
   const [copied, setCopied] = useState(false)
   const [confirming, setConfirming] = useState(false)
-
-  // M-Pesa state
-  const [mpesaPhone, setMpesaPhone] = useState('')
-  const [mpesaCheckoutId, setMpesaCheckoutId] = useState<string | null>(null)
-  const [mpesaStatus, setMpesaStatus] = useState<'pending' | 'paid' | 'failed' | 'cancelled' | 'expired'>('pending')
-  const [mpesaReceipt, setMpesaReceipt] = useState<string | null>(null)
-  const [mpesaMessage, setMpesaMessage] = useState('')
 
   // Rating state
   const [ratingValue, setRatingValue] = useState(0)
@@ -76,13 +66,19 @@ export default function ProductDetail() {
   const { push: pushRecent }  = useRecentlyViewed()
   const { has: wishlisted, toggle: toggleWishlist } = useWishlist()
   const { toast }             = useToast()
-  const { save: saveMethod } = usePaymentPreference()
   const [showShare, setShowShare] = useState(false)
 
   const { data: product, isLoading, isError } = useQuery({
     queryKey: ['product', id],
     queryFn: () => getProduct(id!),
     enabled: !!id,
+  })
+
+  // Rate for USD/KES price display (shared cache key with ProductCard)
+  const { data: rate } = useQuery({
+    queryKey: ['rate', 'KES'],
+    queryFn: () => getRate('KES'),
+    staleTime: 60_000,
   })
 
   const { data: similarProducts } = useQuery({
@@ -97,36 +93,9 @@ export default function ProductDetail() {
     if (id && product) pushRecent(id)
   }, [id, product, pushRecent])
 
-  // ── Poll M-Pesa status with exponential backoff ───────────────────────────────
-  useEffect(() => {
-    if (buyStep !== 'mpesa-pending' || !mpesaCheckoutId) return
-    let delay = 3000
-    let timeoutId: ReturnType<typeof setTimeout>
-
-    async function poll() {
-      try {
-        const result = await getMpesaPaymentStatus(mpesaCheckoutId!)
-        if (result.status !== 'pending') {
-          setMpesaStatus(result.status)
-          setMpesaReceipt(result.mpesa_receipt_number ?? null)
-          if (result.status === 'paid') {
-            qc.invalidateQueries({ queryKey: ['orders'] })
-            setBuyStep('done')
-          }
-          return
-        }
-      } catch { /* ignore transient errors */ }
-      delay = Math.min(delay * 2, 30_000)
-      timeoutId = setTimeout(poll, delay)
-    }
-
-    timeoutId = setTimeout(poll, delay)
-    return () => clearTimeout(timeoutId)
-  }, [buyStep, mpesaCheckoutId, qc])
-
-  // ── Poll order status while Lightning invoice is active (BTCPay auto-settle) ─
-  // When the buyer scans and pays, BTCPay fires a webhook that advances the order
-  // to 'paid'. Polling detects this without requiring a manual preimage paste.
+  // ── Poll order status while Lightning invoice is active ───────────────────────
+  // WebLN payments (Fedi) return a preimage and auto-confirm.
+  // For manual wallets, polling detects settlement via confirmPayment.
   useEffect(() => {
     if ((buyStep !== 'invoice' && buyStep !== 'paying') || !orderId || invoiceExpired) return
     let delay = 3000
@@ -149,7 +118,10 @@ export default function ProductDetail() {
     return () => clearTimeout(timeoutId)
   }, [buyStep, orderId, invoiceExpired, qc])
 
-  // ── Step 1: create order, then go to method selection ────────────────────────
+  // ── Place order + fetch Lightning invoice in one step ─────────────────────────
+  // SokoPay is Lightning-first — we skip method selection and go straight to
+  // the invoice. The invoice is generated from the seller's own Lightning
+  // Address / LNURL; funds settle directly into their wallet.
   const placeOrder = useMutation({
     mutationFn: async () => {
       if (!product) throw new Error('No product')
@@ -164,13 +136,23 @@ export default function ProductDetail() {
         buyer_location_name: locationName || undefined,
       })
       setOrderId(order.id)
-      setBuyStep('method')
+
+      const inv = await createInvoice(order.id)
+      setInvoice({
+        payment_id: inv.payment_id,
+        bolt11: inv.bolt11,
+        amount_sats: inv.amount_sats,
+        expires_at: inv.expires_at,
+        has_auto_detect: inv.has_auto_detect,
+      })
+      setInvoiceExpired(false)
+      setBuyStep('invoice')
     },
     onError: (e: Error) => setPayError(e.message),
   })
 
-  // ── Lightning: create (or refresh) invoice ───────────────────────────────────
-  const getLightningInvoice = useMutation({
+  // ── Refresh expired invoice (same order, new bolt11) ──────────────────────────
+  const refreshInvoiceMut = useMutation({
     mutationFn: async () => {
       if (!orderId) throw new Error('No order')
       const inv = await createInvoice(orderId)
@@ -179,40 +161,19 @@ export default function ProductDetail() {
         bolt11: inv.bolt11,
         amount_sats: inv.amount_sats,
         expires_at: inv.expires_at,
+        has_auto_detect: inv.has_auto_detect,
       })
       setInvoiceExpired(false)
       setBuyStep('invoice')
     },
-    onError: (e: Error) => {
-      setPayError(e.message)
-      // When the seller's Lightning Address is broken/unconfigured the server
-      // returns a 503 with "unavailable" in the message.  Auto-switch to M-Pesa
-      // so the buyer has a clear next step instead of a dead button.
-      if (e.message.toLowerCase().includes('unavailable')) {
-        setPayMethod('mpesa')
-      }
-    },
+    onError: (e: Error) => setPayError(e.message),
   })
 
   const refreshInvoice = useCallback(() => {
     setPayError(null)
     setInvoiceExpired(false)
-    getLightningInvoice.mutate()
-  }, [getLightningInvoice])
-
-  // ── M-Pesa: initiate STK Push ─────────────────────────────────────────────────
-  const startMpesa = useMutation({
-    mutationFn: async () => {
-      if (!orderId) throw new Error('No order')
-      if (!mpesaPhone.trim()) throw new Error('Enter your M-Pesa phone number')
-      const result = await initiateMpesaPay(orderId, mpesaPhone)
-      setMpesaCheckoutId(result.checkout_request_id)
-      setMpesaMessage(result.message)
-      setMpesaStatus('pending')
-      setBuyStep('mpesa-pending')
-    },
-    onError: (e: Error) => setPayError(e.message),
-  })
+    refreshInvoiceMut.mutate()
+  }, [refreshInvoiceMut])
 
   // ── WebLN payment ────────────────────────────────────────────────────────────
   const payWebLN = useMutation({
@@ -306,9 +267,6 @@ export default function ProductDetail() {
     setInvoiceExpired(false)
     setPreimage('')
     setPayError(null)
-    setMpesaCheckoutId(null)
-    setMpesaStatus('pending')
-    setMpesaReceipt(null)
   }
 
   if (isLoading) {
@@ -443,9 +401,20 @@ export default function ProductDetail() {
             </div>
           )}
 
-          <div className="flex items-baseline gap-1">
-            <span className="text-2xl font-bold text-brand-400">{formatKes(product.price_kes)}</span>
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-2xl font-bold text-brand-400">
+              {fiatCurrency === 'USD' && rate
+                ? formatUsd(kesToUsd(parseFloat(product.price_kes), rate))
+                : formatKes(product.price_kes)}
+            </span>
             <span className="text-sm text-gray-500">/{product.unit}</span>
+            <button
+              onClick={() => updateDisplay({ fiatCurrency: fiatCurrency === 'USD' ? 'KES' : 'USD' })}
+              className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-500 transition-colors leading-none"
+              title={fiatCurrency === 'USD' ? 'Switch to KES' : 'Switch to USD'}
+            >
+              {fiatCurrency === 'USD' ? 'KES' : 'USD'}
+            </button>
           </div>
 
           {/* Price position relative to similar products */}
@@ -464,14 +433,11 @@ export default function ProductDetail() {
               )}
             </p>
             {product.escrow_mode && (
-              <div className="flex items-start gap-2 mt-1 bg-green-900/20 border border-green-700/30 rounded-lg px-3 py-2">
-                <ShieldCheck className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-semibold text-green-300">Escrow protected</p>
-                  <p className="text-[11px] text-green-500/80 leading-relaxed">
-                    Your payment is held by SokoPay until you confirm receipt of goods.
-                  </p>
-                </div>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="coming-soon-pill">
+                  <ShieldCheck className="w-3 h-3" /> Escrow Soon
+                </span>
+                <span className="text-[11px] text-gray-500">Buyer protection launching soon</span>
               </div>
             )}
             {product.location_name && (
@@ -601,201 +567,12 @@ export default function ProductDetail() {
                   disabled={placeOrder.isPending}
                   className="btn-primary flex-1 justify-center"
                 >
-                  {placeOrder.isPending ? 'Creating order…' : 'Choose Payment'}
+                  {placeOrder.isPending
+                    ? <><Loader2 className="w-4 h-4 animate-spin" />Getting invoice…</>
+                    : <><Zap className="w-4 h-4" />Pay with Lightning</>
+                  }
                 </button>
               </div>
-            </div>
-          )}
-
-          {/* Step: choose payment method */}
-          {buyStep === 'method' && (
-            <div className="card p-4 space-y-4">
-              <h3 className="font-semibold text-gray-100">How would you like to pay?</h3>
-              <p className="text-xs text-gray-500">
-                Total: <span className="font-semibold text-gray-300">
-                  {formatKes(String(parseFloat(quantity || '0') * parseFloat(product.price_kes)))}
-                </span>
-              </p>
-
-              {/* Method toggle */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setPayMethod('lightning'); saveMethod('lightning') }}
-                  className={clsx(
-                    'flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-colors',
-                    payMethod === 'lightning'
-                      ? 'border-brand-500 bg-brand-500/10 text-brand-300'
-                      : 'border-gray-700 text-gray-500 hover:border-gray-600',
-                  )}
-                >
-                  <Zap className="w-6 h-6" />
-                  <span className="text-xs font-semibold">Lightning</span>
-                  <span className="text-[10px] text-center opacity-70">Any Lightning wallet</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setPayMethod('mpesa'); saveMethod('mpesa') }}
-                  className={clsx(
-                    'flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-colors',
-                    payMethod === 'mpesa'
-                      ? 'border-mpesa bg-mpesa/10 text-mpesa'
-                      : 'border-gray-700 text-gray-500 hover:border-gray-600',
-                  )}
-                >
-                  <Smartphone className="w-6 h-6" />
-                  <span className="text-xs font-semibold">M-Pesa</span>
-                  <span className="text-[10px] text-center opacity-70">STK Push to your phone</span>
-                </button>
-              </div>
-
-              {/* M-Pesa phone input */}
-              {payMethod === 'mpesa' && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400">
-                    Your M-Pesa phone number
-                  </label>
-                  <div className="relative">
-                    <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
-                    <input
-                      type="tel"
-                      value={mpesaPhone}
-                      onChange={e => { setMpesaPhone(e.target.value); setPayError(null) }}
-                      placeholder="0712 345 678"
-                      inputMode="tel"
-                      className="input-base pl-9"
-                    />
-                  </div>
-                  <p className="text-[11px] text-gray-600">
-                    You'll receive a payment prompt on this number. Complete it within 60 seconds.
-                  </p>
-                </div>
-              )}
-
-              {payError && (
-                <div className={clsx(
-                  'rounded-lg px-3 py-2.5 space-y-1.5 border',
-                  payError.toLowerCase().includes('unavailable')
-                    ? 'bg-yellow-900/20 border-yellow-700/30'
-                    : 'bg-red-900/20 border-red-700/30',
-                )}>
-                  <p className={clsx(
-                    'text-xs font-medium',
-                    payError.toLowerCase().includes('unavailable') ? 'text-yellow-300' : 'text-red-400',
-                  )}>
-                    {payError.toLowerCase().includes('unavailable')
-                      ? 'Lightning unavailable for this seller'
-                      : 'Payment error'}
-                  </p>
-                  {!payError.toLowerCase().includes('unavailable') && (
-                    <p className="text-xs text-red-400/80">{payError}</p>
-                  )}
-                  {payError.toLowerCase().includes('unavailable') && payMethod !== 'mpesa' && (
-                    <button
-                      onClick={() => { setPayMethod('mpesa'); setPayError(null) }}
-                      className="text-xs font-semibold text-yellow-300 underline underline-offset-2"
-                    >
-                      Switch to M-Pesa →
-                    </button>
-                  )}
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <button onClick={resetBuy} className="btn-secondary flex-1 justify-center">
-                  Cancel
-                </button>
-                {payMethod === 'lightning' ? (
-                  <button
-                    onClick={() => getLightningInvoice.mutate()}
-                    disabled={getLightningInvoice.isPending}
-                    className="btn-primary flex-1 justify-center"
-                  >
-                    <Zap className="w-4 h-4" />
-                    {getLightningInvoice.isPending ? 'Getting invoice…' : 'Get Invoice'}
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => startMpesa.mutate()}
-                    disabled={startMpesa.isPending || !mpesaPhone.trim()}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-mpesa/20 border border-mpesa/30 text-mpesa hover:bg-mpesa/30 transition-colors disabled:opacity-50"
-                  >
-                    <Smartphone className="w-4 h-4" />
-                    {startMpesa.isPending ? 'Sending prompt…' : 'Send M-Pesa Prompt'}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Step: M-Pesa pending — waiting for Daraja callback */}
-          {buyStep === 'mpesa-pending' && (
-            <div className="card p-4 space-y-4">
-              {(mpesaStatus === 'pending') ? (
-                <>
-                  <div className="text-center space-y-4 py-2">
-                    {/* Pulsing phone icon */}
-                    <div className="relative w-20 h-20 mx-auto">
-                      <div className="absolute inset-0 rounded-full bg-mpesa/20 animate-ping" />
-                      <div className="absolute inset-2 rounded-full bg-mpesa/30 animate-ping animation-delay-150" />
-                      <div className="relative w-20 h-20 rounded-full bg-mpesa/10 border-2 border-mpesa/40 flex items-center justify-center">
-                        <Smartphone className="w-9 h-9 text-mpesa" />
-                      </div>
-                    </div>
-                    <div>
-                      <p className="font-bold text-gray-100 text-base">Check your phone</p>
-                      <p className="text-sm text-gray-400 mt-1 leading-relaxed max-w-xs mx-auto">
-                        {mpesaMessage || 'An M-Pesa STK Push has been sent. Open the prompt and enter your PIN.'}
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-center gap-2 text-xs text-gray-600">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Waiting for confirmation…
-                    </div>
-                    <div className="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-left space-y-1">
-                      <p className="text-[11px] text-gray-500 font-semibold uppercase tracking-wider">Paying</p>
-                      <p className="text-sm font-bold text-gray-100">{product.title}</p>
-                      <p className="text-brand-400 font-semibold">
-                        KES {(parseFloat(quantity || '0') * parseFloat(product.price_kes)).toLocaleString('en-KE', { minimumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  </div>
-                  <button onClick={resetBuy} className="btn-secondary w-full justify-center text-sm">
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div className="text-center space-y-2">
-                    <AlertCircle className="w-8 h-8 text-red-400 mx-auto" />
-                    <p className="font-semibold text-gray-100">
-                      {mpesaStatus === 'cancelled' ? 'Payment cancelled' : 'Payment failed'}
-                    </p>
-                    <p className="text-sm text-gray-400">
-                      {mpesaStatus === 'cancelled'
-                        ? 'You cancelled the M-Pesa prompt. Try again when ready.'
-                        : 'The payment could not be completed. Please try again.'}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={resetBuy} className="btn-secondary flex-1 justify-center">
-                      Cancel order
-                    </button>
-                    <button
-                      onClick={() => {
-                        setMpesaCheckoutId(null)
-                        setMpesaStatus('pending')
-                        setBuyStep('method')
-                        setPayError(null)
-                      }}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-mpesa/20 border border-mpesa/30 text-mpesa hover:bg-mpesa/30 transition-colors"
-                    >
-                      <Smartphone className="w-4 h-4" />
-                      Try again
-                    </button>
-                  </div>
-                </>
-              )}
             </div>
           )}
 
@@ -804,6 +581,7 @@ export default function ProductDetail() {
             <div className="card p-4">
               <LightningInvoiceCard
                 invoice={invoice}
+                hasAutoDetect={invoice.has_auto_detect}
                 onExpired={() => setInvoiceExpired(true)}
                 onCopy={copyBolt11}
                 onWebLN={() => payWebLN.mutate()}
@@ -818,7 +596,7 @@ export default function ProductDetail() {
                 payError={payError}
                 hasWebLN={hasWebLN}
                 isWebLNPaying={payWebLN.isPending}
-                isRefreshing={getLightningInvoice.isPending}
+                isRefreshing={refreshInvoiceMut.isPending}
               />
             </div>
           )}
@@ -835,13 +613,10 @@ export default function ProductDetail() {
           {buyStep === 'done' && (
             <div className="card p-6 space-y-4">
               <div className="text-center space-y-2">
-                <CheckCircle className="w-10 h-10 text-mpesa mx-auto" />
+                <CheckCircle className="w-10 h-10 text-brand-400 mx-auto" />
                 <p className="font-semibold text-gray-100">Payment confirmed!</p>
-                {mpesaReceipt && (
-                  <p className="text-xs text-gray-500 font-mono">Receipt: {mpesaReceipt}</p>
-                )}
                 <p className="text-sm text-gray-400">
-                  Payment sent to the seller. Track your delivery below.
+                  Lightning payment settled. Track your delivery below.
                 </p>
                 <div className="flex gap-2 justify-center flex-wrap">
                   <button onClick={() => navigate('/orders')} className="btn-primary">
@@ -857,8 +632,7 @@ export default function ProductDetail() {
                       unit: product.unit,
                       priceKes: product.price_kes,
                       totalKes: String(parseFloat(quantity || '0') * parseFloat(product.price_kes)),
-                      paymentMethod: payMethod,
-                      mpesaReceipt: mpesaReceipt,
+                      paymentMethod: 'lightning' as const,
                       amountSats: invoice?.amount_sats,
                       settledAt: new Date().toISOString(),
                     }} />

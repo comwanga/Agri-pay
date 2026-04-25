@@ -36,6 +36,9 @@ struct LnurlInvoiceResponse {
     pr: String,
     #[serde(rename = "successAction")]
     success_action: Option<SuccessAction>,
+    /// LUD-21: verify URL returned by some wallets (Alby, LNbits, Blink, Coinos…).
+    /// Polling GET on this URL returns {"settled": bool, "preimage": "..."}.
+    verify: Option<String>,
 }
 
 // ── Public result types ───────────────────────────────────────────────────────
@@ -44,8 +47,10 @@ struct LnurlInvoiceResponse {
 #[derive(Debug, Clone)]
 pub struct LnurlInvoice {
     pub bolt11: String,
-    #[allow(dead_code)] // used when BTCPay is not configured (LNURL fallback path)
     pub success_action: Option<SuccessAction>,
+    /// LUD-21 verify URL, if the seller's wallet supports it.
+    /// A background worker polls this URL to auto-detect payment.
+    pub verify_url: Option<String>,
 }
 
 /// Returned by `verify()` — the pay parameters the seller's wallet advertises.
@@ -355,9 +360,14 @@ impl LnurlClient {
             );
         }
 
+        if inv.verify.is_some() {
+            tracing::debug!(has_verify_url = true, "Wallet supports LUD-21 verify — auto-settle enabled");
+        }
+
         Ok(LnurlInvoice {
             bolt11: inv.pr,
             success_action: inv.success_action,
+            verify_url: inv.verify,
         })
     }
 }

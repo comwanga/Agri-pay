@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Zap, Shield, Smartphone, ChevronRight, X, Store } from 'lucide-react'
+import { Zap, Shield, ChevronRight, X, Store } from 'lucide-react'
 import clsx from 'clsx'
 
 interface Props {
@@ -13,7 +13,7 @@ const STEPS = [
     iconColor: 'text-brand-400',
     title: 'Welcome to SokoPay',
     subtitle: 'Africa\'s marketplace with no bank account needed',
-    body: 'Buy and sell anything across Africa. Pay with M-Pesa or Bitcoin Lightning — your identity is your Nostr key, not your ID.',
+    body: 'Buy and sell anything across Africa. Pay instantly with Bitcoin Lightning — your identity is your Nostr key, not your ID.',
     visual: (
       <div className="flex gap-2 justify-center flex-wrap">
         {['🌽 Maize', '📱 Phones', '👗 Fashion', '🏠 Property', '🌿 Herbs', '🚗 Vehicles'].map(tag => (
@@ -25,24 +25,27 @@ const STEPS = [
     ),
   },
   {
-    icon: Smartphone,
-    iconBg: 'bg-mpesa/20 border-mpesa/30',
-    iconColor: 'text-mpesa',
-    title: 'Pay your way',
-    subtitle: 'M-Pesa or Bitcoin Lightning',
-    body: 'Use M-Pesa STK Push for local mobile money payments. Or pay instantly worldwide with Bitcoin Lightning — settle in seconds, not days.',
+    icon: Zap,
+    iconBg: 'bg-bitcoin/20 border-bitcoin/30',
+    iconColor: 'text-bitcoin',
+    title: 'Pay with Lightning ⚡',
+    subtitle: 'Instant · Borderless · No bank needed',
+    body: 'Pay any seller in Africa instantly with Bitcoin Lightning. Settle in seconds — works with Fedi, Alby, Phoenix, and any Lightning wallet.',
     visual: (
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-mpesa/10 border border-mpesa/20 rounded-xl p-3 text-center">
-          <p className="text-2xl mb-1">📱</p>
-          <p className="text-xs font-bold text-mpesa">M-Pesa</p>
-          <p className="text-[10px] text-gray-500 mt-0.5">STK Push</p>
-        </div>
-        <div className="bg-bitcoin/10 border border-bitcoin/20 rounded-xl p-3 text-center">
-          <p className="text-2xl mb-1">⚡</p>
-          <p className="text-xs font-bold text-bitcoin">Lightning</p>
-          <p className="text-[10px] text-gray-500 mt-0.5">Instant global</p>
-        </div>
+      <div className="space-y-2.5">
+        {[
+          { icon: '⚡', label: 'Instant settlement', detail: 'Seconds, not days' },
+          { icon: '🌍', label: 'Global payments', detail: 'Any country, no borders' },
+          { icon: '🔑', label: 'Non-custodial', detail: 'Funds go direct to seller' },
+        ].map(f => (
+          <div key={f.label} className="flex items-center gap-3 bg-bitcoin/5 border border-bitcoin/15 rounded-xl px-3 py-2.5">
+            <span className="text-lg shrink-0">{f.icon}</span>
+            <div>
+              <p className="text-xs font-semibold text-gray-200">{f.label}</p>
+              <p className="text-[10px] text-gray-500">{f.detail}</p>
+            </div>
+          </div>
+        ))}
       </div>
     ),
   },
@@ -73,24 +76,28 @@ const STEPS = [
   },
   {
     icon: Shield,
-    iconBg: 'bg-green-900/30 border-green-700/30',
-    iconColor: 'text-green-400',
-    title: 'Buyer protection built in',
-    subtitle: 'Escrow, disputes, and confirmed delivery',
-    body: 'Funds are held safely until you confirm receipt. If something goes wrong, file a dispute — our admin team resolves it within 7 days.',
+    iconBg: 'bg-purple-900/30 border-purple-700/30',
+    iconColor: 'text-purple-400',
+    title: 'Escrow Protection',
+    subtitle: 'Coming soon — buyer-safe transactions',
+    body: 'We\'re building escrow so your funds are held until delivery is confirmed. Disputes resolved by our team within 7 days. Launching very soon.',
     visual: (
       <div className="space-y-2">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="coming-soon-pill">Coming Soon</span>
+          <span className="text-[11px] text-gray-500">Launching soon</span>
+        </div>
         {[
-          { step: '1', label: 'Pay into escrow', color: 'bg-brand-500/10 border-brand-500/20 text-brand-400' },
-          { step: '2', label: 'Seller ships your order', color: 'bg-bitcoin/10 border-bitcoin/20 text-bitcoin' },
-          { step: '3', label: 'You confirm receipt', color: 'bg-mpesa/10 border-mpesa/20 text-mpesa' },
-          { step: '4', label: 'Seller gets paid', color: 'bg-green-900/20 border-green-700/30 text-green-400' },
+          { step: '1', label: 'Pay into escrow', color: 'bg-gray-800/80 border-gray-700/50 text-gray-500' },
+          { step: '2', label: 'Seller ships your order', color: 'bg-gray-800/80 border-gray-700/50 text-gray-500' },
+          { step: '3', label: 'You confirm receipt', color: 'bg-gray-800/80 border-gray-700/50 text-gray-500' },
+          { step: '4', label: 'Seller gets paid', color: 'bg-gray-800/80 border-gray-700/50 text-gray-500' },
         ].map(s => (
           <div key={s.step} className={clsx('flex items-center gap-2.5 border rounded-lg px-3 py-2', s.color)}>
-            <span className="w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold shrink-0 border-current">
+            <span className="w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-bold shrink-0 border-current opacity-50">
               {s.step}
             </span>
-            <p className="text-xs font-medium">{s.label}</p>
+            <p className="text-xs font-medium opacity-60">{s.label}</p>
           </div>
         ))}
       </div>

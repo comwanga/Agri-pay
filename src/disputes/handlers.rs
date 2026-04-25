@@ -602,15 +602,15 @@ pub async fn resolve_dispute(
 
 /// Try to refund the buyer via Lightning.
 ///
-/// Flow:
+/// Flow (non-custodial):
 ///   1. Find the settled payment and the buyer's Lightning address.
 ///   2. Ask the buyer's wallet for a fresh bolt11 invoice (via LNURL-pay).
-///   3. Pay that invoice through BTCPay Server.
-///   4. Record the outcome in payments.refund_status.
+///   3. Store the invoice as `refund_bolt11` and mark status `manual_required`.
+///      Admin pays from the dispute resolution fund — the platform holds no funds.
 ///
 /// Every failure path writes a reason to payments.refund_notes so admins
 /// know exactly why an automatic refund didn't complete.
-async fn attempt_lightning_refund(state: SharedState, order_id: Uuid, resolved_at: DateTime<Utc>) {
+async fn attempt_lightning_refund(state: SharedState, order_id: Uuid, _resolved_at: DateTime<Utc>) {
     // ── 1. Fetch the payment record and buyer's Lightning address ─────────────
     #[derive(sqlx::FromRow)]
     struct RefundContext {
@@ -723,111 +723,37 @@ async fn attempt_lightning_refund(state: SharedState, order_id: Uuid, resolved_a
         }
     };
 
-    // ── 3. Check BTCPay is configured ─────────────────────────────────────────
-    let (btcpay_url, btcpay_key, btcpay_store) = match (
-        state.config.btcpay_url.as_deref().filter(|s| !s.is_empty()),
-        state
-            .config
-            .btcpay_api_key
-            .as_deref()
-            .filter(|s| !s.is_empty()),
-        state
-            .config
-            .btcpay_store_id
-            .as_deref()
-            .filter(|s| !s.is_empty()),
-    ) {
-        (Some(u), Some(k), Some(s)) => (u, k, s),
-        _ => {
-            tracing::error!(order_id = %order_id, "Refund: BTCPay not configured");
-            mark_refund(
-                &state,
-                ctx.payment_id,
-                "manual_required",
-                "BTCPay Server not configured — refund must be sent manually",
-            )
-            .await;
-            return;
-        }
-    };
-
-    // ── 4. Pay the invoice through BTCPay ─────────────────────────────────────
-    // BTCPay's Lightning pay endpoint takes a bolt11 and sends the payment
-    // from the platform's connected Lightning node.
-    let pay_url = format!(
-        "{}/api/v1/stores/{}/lightning/BTC/invoices/pay",
-        btcpay_url, btcpay_store
-    );
-    let pay_body = serde_json::json!({
-        "BOLT11": invoice.bolt11,
-        // Allow up to 2% routing fee — typical for well-connected nodes.
-        "maxFeePercent": "2.0",
+    // ── 3. Store invoice + mark for manual payment ────────────────────────────
+    // SokoPay is non-custodial — payments flow directly to the seller's wallet,
+    // so the platform cannot automatically push a refund.  We store the buyer's
+    // invoice and mark the row as manual_required so an admin can pay it from
+    // the dispute resolution fund using any Lightning wallet.
+    let _ = sqlx::query(
+        "UPDATE payments
+         SET refund_status = 'manual_required',
+             refund_bolt11  = $2,
+             refund_notes   = $3
+         WHERE id = $1",
+    )
+    .bind(ctx.payment_id)
+    .bind(&invoice.bolt11)
+    .bind("Buyer refund invoice obtained — admin must pay from dispute resolution fund")
+    .execute(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!(
+            payment_id = %ctx.payment_id,
+            error = %e,
+            "Refund: failed to persist buyer refund invoice"
+        )
     });
 
-    match state
-        .http
-        .post(&pay_url)
-        .header("Authorization", format!("token {}", btcpay_key))
-        .json(&pay_body)
-        .send()
-        .await
-    {
-        Ok(resp) if resp.status().is_success() => {
-            tracing::info!(
-                order_id = %order_id,
-                total_sats = %total_sats,
-                buyer_ln_address = %buyer_ln_address,
-                "Refund: Lightning payment sent successfully to buyer"
-            );
-            // Record the completed refund — bolt11 is the proof of payment.
-            let _ = sqlx::query(
-                "UPDATE payments
-                 SET refund_status = 'completed',
-                     refund_bolt11  = $2,
-                     refunded_at    = $3
-                 WHERE id = $1",
-            )
-            .bind(ctx.payment_id)
-            .bind(&invoice.bolt11)
-            .bind(resolved_at)
-            .execute(&state.db)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    payment_id = %ctx.payment_id,
-                    error = %e,
-                    "Refund: payment sent but failed to update refund_status in DB"
-                )
-            });
-        }
-        Ok(resp) => {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            tracing::error!(
-                order_id = %order_id,
-                btcpay_status = %status,
-                btcpay_body = %body,
-                "Refund: BTCPay refused the Lightning payment"
-            );
-            mark_refund(
-                &state,
-                ctx.payment_id,
-                "failed",
-                &format!("BTCPay returned HTTP {}: {}", status, body),
-            )
-            .await;
-        }
-        Err(e) => {
-            tracing::error!(order_id = %order_id, error = %e, "Refund: network error reaching BTCPay");
-            mark_refund(
-                &state,
-                ctx.payment_id,
-                "failed",
-                &format!("Network error sending refund: {}", e),
-            )
-            .await;
-        }
-    }
+    tracing::info!(
+        order_id = %order_id,
+        buyer_ln_address = %buyer_ln_address,
+        total_sats = %total_sats,
+        "Refund invoice obtained — awaiting admin payment from dispute fund"
+    );
 }
 
 /// Attempt a direct M-Pesa B2C refund to the buyer's registered phone.

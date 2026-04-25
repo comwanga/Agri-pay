@@ -23,6 +23,7 @@ export interface Farmer {
   nostr_pubkey: string | null
   ln_address: string | null
   mpesa_phone: string | null
+  btc_address: string | null
   location_name: string | null
   created_at: string
 }
@@ -32,6 +33,7 @@ export interface UpdateFarmerPayload {
   pin?: string
   ln_address?: string
   mpesa_phone?: string
+  btc_address?: string
   location_name?: string
   location_lat?: number
   location_lng?: number
@@ -420,6 +422,8 @@ export interface CreateInvoiceResponse {
   amount_kes: string
   expires_at: string   // ISO-8601 UTC — 60 seconds after creation
   reused: boolean
+  /** true when the seller's wallet supports LUD-21 verify — backend auto-detects payment */
+  has_auto_detect: boolean
 }
 
 // ─── Exchange Rate ────────────────────────────────────────────────────────────

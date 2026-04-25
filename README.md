@@ -1,50 +1,82 @@
 # SokoPay
 
-A marketplace for Africa — buy and sell anything, pay with Lightning or M-Pesa. No bank account needed, no KYC, no passwords. Identity runs on Nostr.
+A global Lightning marketplace — buy and sell anything, pay instantly with Bitcoin Lightning. No bank account, no KYC, no passwords. Your Nostr key is your identity.
 
-Built as a Fedi mini app so cooperative members sign in automatically. Payments settle in seconds via Lightning Network. Sellers cash out to M-Pesa on demand.
-
----
-
-<img width="391" height="869" alt="image" src="https://github.com/user-attachments/assets/d8b79d78-a6f5-441e-a4d8-7821706f636c" />
-
+Built to run as a Fedi mini-app. Open it inside Fedi and you're signed in automatically.
 
 ---
 
 ## What it does
 
-- **Browse and buy** — product listings across 11 categories, filterable by country, price, rating, and stock
-- **Sell anything** — list products with images, set your price in KES, choose Lightning or escrow payment
-- **Pay your way** — Lightning Network for instant Bitcoin settlement, M-Pesa STK Push for local mobile money
-- **Escrow protection** — opt-in escrow holds funds until the buyer confirms delivery
-- **No accounts** — Nostr public key is your identity; open the app inside Fedi and you're in
-- **Cash out any time** — sellers trigger M-Pesa B2C transfers from their balance whenever they want
-- **Ratings and reviews** — buyers rate products and sellers after delivery
-- **Dispute resolution** — buyers open disputes with evidence; admins resolve with refund, release, or split
-- **Works globally** — 190+ countries in the shipping matrix, BTC/KES exchange rates updated every minute
+**For buyers**
+- Browse products across 11 categories, filtered by country and price
+- Pay with Bitcoin Lightning — the invoice goes directly to the seller's wallet
+- Prices shown in USD by default, toggle to local currency any time
+- Scan a QR code or tap "Pay with Fedi / WebLN" for one-tap checkout
+- If your wallet supports LUD-21, the order updates itself automatically when you pay — no preimage paste needed
+
+**For sellers**
+- List products with photos, set your price (stored in KES, displayed in USD)
+- Add your Lightning Address (`you@wallet.com`) or LNURL (`lnurl1dp68…`) to receive payments
+- Optionally add an on-chain Bitcoin address for buyers who prefer it
+- Funds go straight to your wallet — SokoPay never holds them
+
+**For everyone**
+- Sign in with Fedi (instant), a Nostr browser extension (Alby, nos2x), paste your nsec from Primal/Damus, or generate a fresh identity in 5 seconds
+- Rate sellers and products after delivery
+- File a dispute if something goes wrong — admin team reviews and resolves
+
+**Coming soon**
+- Escrow protection — funds held until you confirm delivery
+
+---
+
+## How payments work
+
+SokoPay is **non-custodial**. Payments go directly from the buyer's wallet to the seller's.
+
+1. Buyer taps "Pay with Lightning"
+2. Backend calls the seller's Lightning Address or LNURL to fetch a real BOLT11 invoice
+3. Buyer scans the QR or pays with one tap via WebLN / Fedi
+4. If the seller's wallet supports **LUD-21 verify**, a background worker polls for settlement every 10 seconds and advances the order automatically
+5. Without LUD-21, the buyer's WebLN wallet returns a preimage automatically (Fedi users), or they paste it manually from their wallet's payment details
+
+The platform never touches the money.
+
+---
+
+## Sign-in options
+
+| Option | When to use |
+|--------|------------|
+| **Fedi app** | Open SokoPay inside Fedi — signs in with zero steps |
+| **Nostr extension** | Alby, nos2x, Flamingo in your browser |
+| **Paste nsec** | You have a key from Primal, Damus, Iris, or Amethyst |
+| **Generate new** | First time — creates a keypair in your browser in 5 seconds |
+
+Your private key never leaves your device.
 
 ---
 
 ## Stack
 
-**Backend** — Rust + Axum + PostgreSQL. Handles auth, product listings, orders, payments, M-Pesa callbacks, Lightning invoices via BTCPay Server, background workers for invoice expiry and low-stock alerts, and a Prometheus metrics endpoint.
+**Backend** — Rust + Axum + PostgreSQL. Handles auth, products, orders, Lightning invoices, background workers, and a Prometheus metrics endpoint.
 
-**Frontend** — React 18 + TypeScript + Tailwind CSS + Vite. Amazon-style UI: editorial homepage with curated product rows, category landing pages, dedicated cart with real checkout, and a slide-in mega menu.
+**Frontend** — React 18 + TypeScript + Tailwind CSS + Vite. Global marketplace UI with editorial homepage, product rows, cart, and mobile bottom nav.
 
-**Payments** — Lightning Network via BTCPay Server (invoice lifecycle + webhook). M-Pesa via Safaricom Daraja (STK Push for buying, B2C for seller payouts).
+**Payments** — Lightning Network via seller's own Lightning Address / LNURL (LUD-16 / LUD-01). Auto-settlement via LUD-21 verify URL polling. No BTCPay Server required.
 
-**Identity** — Nostr NIP-98 HTTP Auth. The frontend signs a kind-27235 event and exchanges it for a JWT. No passwords anywhere.
+**Identity** — Nostr NIP-98 HTTP Auth. The frontend signs a kind-27235 event and exchanges it for a JWT. No passwords.
 
 | Layer | Technology |
-|---|---|
-| API server | Rust 1.75+, Axum 0.7, Tokio |
-| Database | PostgreSQL 16, sqlx 0.8 |
-| Auth | Nostr NIP-98, k256 Schnorr, jsonwebtoken |
-| Lightning | BTCPay Server |
-| Mobile money | Safaricom Daraja B2C |
-| FX rates | CoinGecko API with DB cache |
+|-------|-----------|
+| API server | Rust, Axum, Tokio |
+| Database | PostgreSQL 16, sqlx |
+| Auth | Nostr NIP-98, Schnorr signatures, JWT |
+| Lightning | Seller's own wallet via LNURL-pay (LUD-16/01/21) |
+| FX rates | CoinGecko API with 60-second DB cache |
 | Frontend | React 18, TypeScript 5, Tailwind 3, Vite 6 |
-| State | React Query 5, Context API |
+| State | TanStack Query 5, React Context |
 | Deployment | Docker Compose (local), GitHub Pages (frontend) |
 
 ---
@@ -64,29 +96,14 @@ cd SokoPay
 cp .env.example .env
 ```
 
-Minimum required in `.env`:
+Minimum required:
 
 ```env
 DATABASE_URL=postgresql://sokopay:sokopay_dev@localhost:5433/sokopay?sslmode=disable
 JWT_SECRET=<openssl rand -base64 48>
 ```
 
-For Lightning payments add:
-```env
-BTCPAY_URL=https://your-btcpay-instance
-BTCPAY_API_KEY=your_api_key
-BTCPAY_STORE_ID=your_store_id
-BTCPAY_WEBHOOK_SECRET=<openssl rand -hex 32>
-```
-
-For M-Pesa add:
-```env
-MPESA_CONSUMER_KEY=...
-MPESA_CONSUMER_SECRET=...
-MPESA_SHORTCODE=...
-MPESA_PASSKEY=...
-MPESA_CALLBACK_URL=https://your-public-url/api/payments/mpesa/callback
-```
+That's enough to run locally. No external payment services needed.
 
 ### 3. Start Postgres
 
@@ -94,7 +111,7 @@ MPESA_CALLBACK_URL=https://your-public-url/api/payments/mpesa/callback
 docker compose up postgres -d
 ```
 
-Wait a few seconds for the health check. Migrations run automatically when the backend starts.
+Migrations run automatically when the backend starts.
 
 ### 4. Run the backend
 
@@ -102,7 +119,7 @@ Wait a few seconds for the health check. Migrations run automatically when the b
 cargo run
 ```
 
-API available at `http://localhost:3001`. Migrations apply on first start.
+API available at `http://localhost:3001`.
 
 ### 5. Run the frontend
 
@@ -112,7 +129,19 @@ npm install
 npm run dev
 ```
 
-Frontend at `http://localhost:5173`. For Nostr auth to work in production, open the GitHub Pages URL inside Fedi and point `VITE_API_URL` to a public backend.
+Frontend at `http://localhost:5173`.
+
+---
+
+## How sellers get paid
+
+Sellers add a Lightning Address or LNURL to their profile:
+
+- **Lightning Address** — an email-style address like `you@walletofsatoshi.com` or `you@getalby.com`
+- **LNURL** — a `lnurl1dp68…` string from Fedi or any other wallet that doesn't use email-style addresses. In Fedi: **Wallet → Receive → LNURL → Copy**
+- **On-chain Bitcoin** — optional, for buyers who prefer on-chain BTC
+
+When a buyer pays, the money lands directly in the seller's wallet. No withdrawal step needed.
 
 ---
 
@@ -120,18 +149,12 @@ Frontend at `http://localhost:5173`. For Nostr auth to work in production, open 
 
 ### Frontend (GitHub Pages)
 
-The frontend deploys automatically on every push to `main` via GitHub Actions. Live at [comwanga.github.io/sokopay](https://comwanga.github.io/sokopay/).
+Deploys automatically on every push to `main`. Live at [comwanga.github.io/SokoPay](https://comwanga.github.io/SokoPay/).
 
-To connect to a backend:
+To connect to a real backend:
 1. Deploy the Rust API to any server (Railway, Fly.io, a VPS)
-2. In GitHub repo settings → Variables → Actions, set `VITE_API_URL` to your backend URL
+2. Set `VITE_API_URL` to your backend URL in GitHub Actions variables
 3. Re-run the deploy workflow
-
-For local backend testing, use ngrok:
-```bash
-ngrok http 3001
-# paste the HTTPS URL into VITE_API_URL in your .env, then npm run dev
-```
 
 ### Full stack (Docker)
 
@@ -141,38 +164,25 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
-Services: `postgres` on 5433, `backend` on 3001, `frontend` dev server on 5173.
+Services: `postgres` on 5433, `backend` on 3001.
 
 ---
 
 ## Environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `DATABASE_URL` | required | PostgreSQL connection string |
-| `JWT_SECRET` | required | Min 32 chars. Signs all tokens |
-| `JWT_EXPIRY_HOURS` | `24` | Token lifetime |
-| `ADMIN_PASSWORD_HASH` | — | bcrypt hash for admin login. Leave blank to disable |
-| `BTCPAY_URL` | — | BTCPay Server URL |
-| `BTCPAY_API_KEY` | — | BTCPay API key |
-| `BTCPAY_STORE_ID` | — | BTCPay store ID |
-| `BTCPAY_WEBHOOK_SECRET` | — | HMAC secret for BTCPay webhooks |
-| `MPESA_ENV` | `sandbox` | `sandbox` or `production` |
-| `MPESA_CONSUMER_KEY` | — | Daraja consumer key |
-| `MPESA_CONSUMER_SECRET` | — | Daraja consumer secret |
-| `MPESA_SHORTCODE` | — | Business short code |
-| `MPESA_PASSKEY` | — | STK Push passkey |
-| `MPESA_CALLBACK_URL` | — | Public HTTPS URL for Daraja callbacks |
-| `MPESA_B2C_INITIATOR_NAME` | — | B2C initiator username |
-| `MPESA_B2C_SECURITY_CREDENTIAL` | — | RSA-encrypted initiator password |
-| `MPESA_B2C_RESULT_URL` | — | B2C result callback URL |
-| `MPESA_B2C_TIMEOUT_URL` | — | B2C timeout callback URL |
-| `PUBLIC_BASE_URL` | `http://localhost:3001` | Publicly reachable backend URL |
-| `ALLOWED_ORIGINS` | `http://localhost:5173` | Comma-separated CORS origins |
-| `UPLOAD_DIR` | `./uploads` | Where product images are stored |
-| `COINGECKO_API_URL` | CoinGecko v3 | FX oracle base URL |
-| `RATE_CACHE_SECONDS` | `60` | How long to cache BTC rates |
-| `LOG_FORMAT` | `text` | `text` for dev, `json` for production |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `JWT_SECRET` | Yes | At least 32 characters. Signs all tokens |
+| `JWT_EXPIRY_HOURS` | No (default: 24) | How long tokens last |
+| `ADMIN_PASSWORD_HASH` | No | bcrypt hash for admin login |
+| `PUBLIC_BASE_URL` | No (default: localhost) | Publicly reachable backend URL |
+| `ALLOWED_ORIGINS` | No (default: localhost) | Comma-separated CORS origins |
+| `UPLOAD_DIR` | No (default: ./uploads) | Where product images are stored |
+| `COINGECKO_API_URL` | No | FX oracle base URL |
+| `RATE_CACHE_SECONDS` | No (default: 60) | How long to cache BTC/USD/KES rates |
+| `LOG_FORMAT` | No (default: text) | `text` for dev, `json` for production |
+| `NOSTR_RELAY_URL` | No | Relay for order-status DM notifications |
 
 ---
 
@@ -183,86 +193,63 @@ All endpoints are under `/api`. Protected routes require `Authorization: Bearer 
 ### Auth
 
 | Method | Path | Description |
-|---|---|---|
-| `POST` | `/auth/nostr` | Sign in with a Nostr NIP-98 signed event. Auto-creates a farmer profile on first use |
-| `POST` | `/auth/login` | Username + password login for admin and operator accounts |
-| `POST` | `/auth/register` | Create a user account (admin only) |
-| `POST` | `/auth/refresh` | Refresh a JWT |
+|--------|------|-------------|
+| `POST` | `/auth/nostr` | Sign in with a NIP-98 signed event. Creates a profile on first use |
+| `POST` | `/auth/login` | Username + password for admin accounts |
+| `POST` | `/auth/refresh` | Refresh a JWT before it expires |
 
 ### Products
 
 | Method | Path | Description |
-|---|---|---|
-| `GET` | `/products` | List products. Filters: `category`, `country`, `sort`, `q`, `in_stock`, `cursor` |
+|--------|------|-------------|
+| `GET` | `/products` | List products. Filters: `category`, `country`, `sort`, `q`, `in_stock` |
 | `POST` | `/products` | Create a listing |
 | `GET` | `/products/:id` | Single product with images and ratings |
 | `PUT` | `/products/:id` | Update your listing |
 | `DELETE` | `/products/:id` | Remove your listing |
 | `POST` | `/products/:id/images` | Upload an image (multipart) |
-| `GET` | `/products/:id/ratings` | Reviews for a product |
-| `POST` | `/products/:id/ratings` | Leave a review |
 
 ### Orders
 
 | Method | Path | Description |
-|---|---|---|
-| `GET` | `/orders` | Your orders (buyer or seller view depending on role) |
+|--------|------|-------------|
+| `GET` | `/orders` | Your orders (buyer or seller view) |
 | `POST` | `/orders` | Place an order |
-| `GET` | `/orders/:id` | Order details |
 | `PATCH` | `/orders/:id/status` | Update order status |
 | `DELETE` | `/orders/:id` | Cancel an order |
-| `GET` | `/orders/:id/messages` | Message thread between buyer and seller |
-| `POST` | `/orders/:id/messages` | Send a message |
 | `POST` | `/orders/:id/dispute` | Open a dispute |
 
 ### Payments
 
 | Method | Path | Description |
-|---|---|---|
-| `POST` | `/payments/invoice` | Create a Lightning invoice for an order |
-| `POST` | `/payments/confirm` | Confirm Lightning payment with preimage |
+|--------|------|-------------|
+| `POST` | `/payments/invoice` | Generate a Lightning invoice for an order |
+| `POST` | `/payments/confirm` | Confirm payment with a preimage |
 | `GET` | `/payments/order/:id` | Payment status for an order |
 | `GET` | `/payments/history` | Your payment history |
-| `POST` | `/payments/mpesa/stk-push` | Initiate M-Pesa STK Push |
-| `GET` | `/payments/mpesa/:id/status` | M-Pesa payment status |
+| `GET` | `/payments/verify-ln` | Check if a Lightning Address or LNURL is reachable |
 
 ### Sellers
 
 | Method | Path | Description |
-|---|---|---|
+|--------|------|-------------|
 | `GET` | `/farmers/:id` | Seller profile |
-| `PUT` | `/farmers/:id` | Update your profile |
-| `GET` | `/farmers/:id/analytics` | Sales analytics (your own) |
-| `GET` | `/farmers/:id/ratings` | Seller rating summary |
-| `GET` | `/storefront/:id` | Public seller storefront |
+| `PUT` | `/farmers/:id` | Update your profile (name, Lightning Address, LNURL, Bitcoin address) |
+| `GET` | `/storefront/:id` | Public seller page with listings |
+
+### Lightning tips
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/lnurl/tip/:seller_id` | Get a tip invoice from a seller's Lightning wallet |
 
 ### Admin
 
 | Method | Path | Description |
-|---|---|---|
+|--------|------|-------------|
 | `GET` | `/admin/disputes` | Open disputes |
-| `PATCH` | `/admin/disputes/:id/resolve` | Resolve a dispute: `refund_buyer`, `release_seller`, or `split` |
+| `PATCH` | `/admin/disputes/:id/resolve` | Resolve: `refund_buyer`, `release_seller`, or `split` |
 | `POST` | `/farmers/:id/verify` | Verify a seller |
-
----
-
-## Payment flows
-
-**Buying with Lightning**
-
-Buyer places order → creates Lightning invoice → scans with any Lightning wallet → BTCPay webhook fires → order moves to `paid` → seller ships.
-
-**Buying with M-Pesa**
-
-Buyer places order → enters phone number → STK Push sent to phone → buyer approves on phone → Daraja callback confirms → order moves to `paid`.
-
-**Escrow mode**
-
-Seller opts in per listing. Funds held by the platform after payment. Released to seller only after buyer confirms delivery. Disputes can be raised if something goes wrong.
-
-**Seller payout**
-
-Seller goes to dashboard → triggers M-Pesa B2C transfer → Daraja sends funds to registered phone → balance updated on callback. Stuck transfers auto-recover after 30 minutes.
 
 ---
 

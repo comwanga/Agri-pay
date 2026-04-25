@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Store, Zap, Smartphone, ChevronUp } from 'lucide-react'
+import { Zap, ChevronUp, Clock } from 'lucide-react'
 import { useDisplaySettings } from '../context/displaySettings.tsx'
 import { useTranslation } from '../i18n/index.tsx'
 import type { SupportedLanguage } from '../i18n/translations.ts'
@@ -50,67 +50,69 @@ export default function Footer() {
     <footer className="hidden md:block bg-gray-900 border-t border-gray-800 mt-auto">
       <BackToTop />
 
-      {/* Link columns */}
-      <div className="max-w-screen-xl mx-auto px-6 py-10 grid grid-cols-2 sm:grid-cols-4 gap-8">
-        {col('Marketplace', [
-          { label: 'Browse All Products', path: '/browse' },
-          { label: 'Price Index', path: '/price-index' },
-          { label: 'Sell on SokoPay', path: '/sell' },
-        ])}
-        {col('Your Account', [
-          { label: t('nav.orders'), path: '/orders' },
-          { label: t('nav.payments'), path: '/payments' },
-          { label: t('nav.profile'), path: '/profile' },
-          { label: t('nav.settings'), path: '/settings' },
-        ])}
-        {col('Selling', [
-          { label: 'My Listings', path: '/sell' },
-          { label: 'New Listing', path: '/sell/new' },
-          { label: 'Referral Programme', path: '/profile' },
-        ])}
-        {col('Payment Methods', [
-          { label: '⚡ Lightning Network', path: '/browse' },
-          { label: '📱 M-Pesa (Daraja)', path: '/browse' },
-          { label: '🔒 Escrow Protection', path: '/browse' },
-        ])}
+      {/* Main footer content */}
+      <div className="max-w-screen-xl mx-auto px-6 py-12">
+        <div className="grid grid-cols-5 gap-8">
+
+          {/* Brand column */}
+          <div className="col-span-2 space-y-4">
+            <div className="flex items-center gap-2.5">
+              <img src="/logo.svg" alt="SokoPay" className="w-8 h-8 rounded-xl" />
+              <span className="text-base font-bold text-gray-100">SokoPay</span>
+            </div>
+            <p className="text-sm text-gray-500 leading-relaxed max-w-xs">
+              The global Lightning marketplace. Buy and sell anywhere in the world
+              — instant, borderless, non-custodial.
+            </p>
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Zap className="w-3.5 h-3.5 text-bitcoin shrink-0" />
+              <span>Lightning</span>
+              <span className="text-gray-700 mx-0.5">·</span>
+              <Clock className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+              <span className="text-purple-500">Escrow soon</span>
+            </div>
+          </div>
+
+          {/* Link columns */}
+          <div className="col-span-3 grid grid-cols-3 gap-8">
+            {col('Marketplace', [
+              { label: 'Browse All Products', path: '/browse' },
+              { label: 'Price Index', path: '/price-index' },
+              { label: 'Sell on SokoPay', path: '/sell' },
+            ])}
+            {col('Your Account', [
+              { label: t('nav.orders'), path: '/orders' },
+              { label: t('nav.payments'), path: '/payments' },
+              { label: t('nav.profile'), path: '/profile' },
+              { label: t('nav.settings'), path: '/settings' },
+            ])}
+            {col('Payments', [
+              { label: '⚡ Lightning Network', path: '/browse' },
+              { label: '🔒 Escrow (Coming Soon)', path: '/browse' },
+              { label: 'New Listing', path: '/sell/new' },
+            ])}
+          </div>
+        </div>
       </div>
 
       <div className="h-px bg-gray-800" />
 
       {/* Bottom bar */}
-      <div className="max-w-screen-xl mx-auto px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-        {/* Logo */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="w-7 h-7 rounded-lg bg-brand-500/20 border border-brand-500/30 flex items-center justify-center">
-            <Store className="w-4 h-4 text-brand-400" />
-          </div>
-          <span className="text-sm font-bold text-gray-300">SokoPay</span>
-        </div>
-
+      <div className="max-w-screen-xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
         {/* Language selector */}
-        <div className="flex items-center gap-2">
-          <select
-            value={language}
-            onChange={e => update({ language: e.target.value as SupportedLanguage })}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-500 cursor-pointer"
-          >
-            {LANGUAGES.map(l => (
-              <option key={l} value={l}>{l}</option>
-            ))}
-          </select>
-
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-xs text-gray-400">
-            <Zap className="w-3 h-3 text-bitcoin" />
-            <span>Lightning</span>
-            <span className="text-gray-600">+</span>
-            <Smartphone className="w-3 h-3 text-mpesa" />
-            <span>M-Pesa</span>
-          </div>
-        </div>
+        <select
+          value={language}
+          onChange={e => update({ language: e.target.value as SupportedLanguage })}
+          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-400 focus:outline-none focus:border-brand-500 cursor-pointer"
+        >
+          {LANGUAGES.map(l => (
+            <option key={l} value={l}>{l}</option>
+          ))}
+        </select>
 
         {/* Copyright */}
         <p className="text-[11px] text-gray-600">
-          © {new Date().getFullYear()} SokoPay. Built on Bitcoin & M-Pesa.
+          © {new Date().getFullYear()} SokoPay. The global Lightning marketplace.
         </p>
       </div>
     </footer>

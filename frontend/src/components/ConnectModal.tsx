@@ -3,7 +3,7 @@ import { generateSecretKey, getPublicKey } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
 import {
   AlertCircle, RefreshCw, Eye, EyeOff, X, Zap, Puzzle,
-  ExternalLink, Sparkles, Shield, ChevronRight,
+  ExternalLink, Sparkles, Shield, ChevronRight, KeyRound,
 } from 'lucide-react'
 import { nostrLogin, setLocalSecretKey } from '../api/client.ts'
 import clsx from 'clsx'
@@ -13,7 +13,7 @@ interface Props {
   onCancel: () => void
 }
 
-type Screen = 'welcome' | 'extension' | 'generate'
+type Screen = 'welcome' | 'extension' | 'generate' | 'import'
 
 function makeKey() {
   const sk = generateSecretKey()
@@ -54,6 +54,12 @@ export default function ConnectModal({ onSuccess, onCancel }: Props) {
   const [genLoading, setGenLoading] = useState(false)
   const [savedConfirmed, setSavedConfirmed] = useState(false)
 
+  // Import existing key flow
+  const [importKey, setImportKey] = useState('')
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importLoading, setImportLoading] = useState(false)
+  const [showImportKey, setShowImportKey] = useState(false)
+
   function copy(text: string, label: string) {
     navigator.clipboard.writeText(text)
     setCopied(label)
@@ -87,6 +93,44 @@ export default function ConnectModal({ onSuccess, onCancel }: Props) {
     }
   }
 
+  async function handleImportLogin() {
+    const raw = importKey.trim()
+    setImportError(null)
+
+    // Reject npub with a helpful explanation
+    if (raw.startsWith('npub1')) {
+      setImportError(
+        'That\'s your public key (npub) — it can\'t sign in. You need your private key (nsec). Find it in your Nostr app under Settings → Keys → Secret / Private key.',
+      )
+      return
+    }
+
+    // Decode and validate nsec
+    let sk: Uint8Array
+    try {
+      const decoded = nip19.decode(raw)
+      if (decoded.type !== 'nsec') {
+        setImportError('Invalid key format. Paste your nsec1… private key.')
+        return
+      }
+      sk = decoded.data as Uint8Array
+    } catch {
+      setImportError('Could not parse key. Make sure you copied the full nsec1… string.')
+      return
+    }
+
+    setImportLoading(true)
+    try {
+      setLocalSecretKey(sk)
+      await nostrLogin()
+      onSuccess()
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : 'Sign-in failed')
+    } finally {
+      setImportLoading(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4" role="presentation">
       <div role="dialog" aria-modal="true" aria-label="Sign in to SokoPay" className="bg-gray-900 border border-gray-800 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm shadow-2xl">
@@ -98,7 +142,10 @@ export default function ConnectModal({ onSuccess, onCancel }: Props) {
               <Zap className="w-3.5 h-3.5 text-brand-400" />
             </div>
             <h2 className="text-sm font-bold text-gray-100">
-              {screen === 'welcome' ? 'Sign in to SokoPay' : screen === 'extension' ? 'Use Nostr wallet' : 'Create your identity'}
+              {screen === 'welcome'    ? 'Sign in to SokoPay'
+             : screen === 'extension' ? 'Use Nostr wallet'
+             : screen === 'import'    ? 'Import Nostr identity'
+             :                          'Create your identity'}
             </h2>
           </div>
           <button
@@ -157,6 +204,20 @@ export default function ConnectModal({ onSuccess, onCancel }: Props) {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-100">I have a Nostr wallet</p>
                     <p className="text-[11px] text-gray-500">Alby, nos2x, Flamingo, or similar</p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-gray-400 shrink-0" />
+                </button>
+
+                <button
+                  onClick={() => { setImportKey(''); setImportError(null); setScreen('import') }}
+                  className="flex items-center gap-3 w-full bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-gray-600 rounded-xl px-4 py-3 transition-all text-left group"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-gray-700 border border-gray-600 flex items-center justify-center shrink-0">
+                    <KeyRound className="w-4.5 h-4.5 text-gray-300" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-100">I have a Nostr key</p>
+                    <p className="text-[11px] text-gray-500">From Primal, Damus, Iris, or any Nostr app</p>
                   </div>
                   <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-gray-400 shrink-0" />
                 </button>
@@ -345,6 +406,90 @@ export default function ConnectModal({ onSuccess, onCancel }: Props) {
               >
                 {genLoading ? 'Creating account…' : 'Continue to SokoPay'}
               </button>
+            </>
+          )}
+
+          {/* ── Import existing identity screen ─────────────────────── */}
+          {screen === 'import' && (
+            <>
+              <button
+                onClick={() => setScreen('welcome')}
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors -mt-1 mb-1"
+              >
+                ← Back
+              </button>
+
+              <p className="text-[11px] text-gray-400 leading-snug">
+                Paste your Nostr <strong className="text-red-400">private key (nsec)</strong> from your existing Nostr app.
+                It is stored only in your browser — SokoPay never sends it anywhere.
+              </p>
+
+              {/* Where to find nsec hints */}
+              <div className="bg-gray-800/70 border border-gray-700 rounded-xl px-3.5 py-3 space-y-2">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Where to find your nsec</p>
+                {[
+                  { app: 'Primal',  path: 'Settings → Keys → Secret key' },
+                  { app: 'Damus',   path: 'Settings → Account → Export secret key' },
+                  { app: 'Iris',    path: 'Settings → Account → Private key' },
+                  { app: 'Amethyst', path: 'Settings → Keys → Secret account key' },
+                ].map(({ app, path }) => (
+                  <div key={app} className="flex items-start gap-2 text-[11px]">
+                    <span className="font-semibold text-gray-300 w-20 shrink-0">{app}</span>
+                    <span className="text-gray-500 font-mono">{path}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* nsec input */}
+              <div className="space-y-1.5">
+                <div className="relative">
+                  <input
+                    type={showImportKey ? 'text' : 'password'}
+                    value={importKey}
+                    onChange={e => { setImportKey(e.target.value); setImportError(null) }}
+                    placeholder="nsec1…"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className={clsx(
+                      'input-base font-mono text-xs pr-20',
+                      importError && 'border-red-700/60',
+                    )}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowImportKey(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                    aria-label={showImportKey ? 'Hide key' : 'Show key'}
+                  >
+                    {showImportKey
+                      ? <EyeOff className="w-3.5 h-3.5" />
+                      : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+
+                {importError && (
+                  <div className="flex gap-2 items-start bg-red-900/20 border border-red-700/30 rounded-xl px-3 py-2.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-red-400 leading-snug">{importError}</p>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={handleImportLogin}
+                disabled={importLoading || !importKey.trim()}
+                className="btn-primary w-full justify-center"
+              >
+                <KeyRound className="w-4 h-4" />
+                {importLoading ? 'Signing in…' : 'Sign in with my key'}
+              </button>
+
+              <p className="text-[10px] text-gray-600 text-center leading-snug">
+                Your key never leaves this device. If you don't have an nsec yet,{' '}
+                <button onClick={() => setScreen('generate')} className="text-brand-400 hover:text-brand-300">
+                  create a new identity →
+                </button>
+              </p>
             </>
           )}
 

@@ -71,7 +71,7 @@ function TopNavbar({ onMenuOpen, onCartOpen, onConverterOpen }: TopNavbarProps) 
   const [searchFocused, setSearchFocused] = useState(false)
 
   const stored = localStorage.getItem('sokopay_country')
-  const locationLabel = stored ? countryName(stored) : 'Africa'
+  const locationLabel = stored ? countryName(stored) : 'Worldwide'
 
   return (
     <header role="banner" className="fixed top-0 inset-x-0 z-40 bg-gray-900 border-b border-gray-800 h-14 shadow-lg">
@@ -88,9 +88,7 @@ function TopNavbar({ onMenuOpen, onCartOpen, onConverterOpen }: TopNavbarProps) 
 
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2 shrink-0 group">
-          <div className="w-8 h-8 rounded-xl bg-brand-500/20 border border-brand-500/30 flex items-center justify-center group-hover:bg-brand-500/30 transition-colors">
-            <Store className="w-4 h-4 text-brand-400" />
-          </div>
+          <img src="/logo.svg" alt="SokoPay" className="w-8 h-8 rounded-xl group-hover:opacity-90 transition-opacity" />
           <span className="text-base font-bold text-gray-100 leading-tight">SokoPay</span>
         </Link>
 
@@ -267,7 +265,7 @@ function MegaMenu({ open, onClose, onConverterOpen }: MegaMenuProps) {
         <div className="flex items-center justify-between px-4 py-4 border-b border-gray-800 bg-brand-500/5 shrink-0">
           {authed ? (
             <button onClick={() => go('/profile')} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-              <div className="w-10 h-10 rounded-full bg-brand-500/20 border border-brand-500/30 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-full bg-brand-500/15 border border-brand-500/25 flex items-center justify-center shrink-0">
                 <UserCircle className="w-6 h-6 text-brand-400" />
               </div>
               <div className="min-w-0">

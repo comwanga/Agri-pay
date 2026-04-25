@@ -27,7 +27,7 @@ const CATEGORY_TAGLINES: Record<string, string> = {
   'Fashion & Clothing': 'Clothing, shoes, and accessories for every style',
   'Home & Living':      'Furniture, decor, and everything for your home',
   'Health & Beauty':    'Wellness products, skincare, and personal care',
-  'Services':           'Skilled professionals and freelancers across Africa',
+  'Services':           'Skilled professionals and freelancers worldwide',
   'Vehicles & Parts':   'Cars, motorcycles, spare parts, and accessories',
   'Property':           'Land, housing, and commercial spaces for rent or sale',
   'Agriculture':        'Seeds, fertilisers, tools, and farm equipment',
