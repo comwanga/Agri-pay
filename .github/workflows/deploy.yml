@@ -25,21 +25,34 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 2
 
       - name: Check if backend files changed
+        uses: dorny/paths-filter@v3
         id: changes
-        run: |
-          git diff --name-only HEAD~1 HEAD | grep -qE '^(src/|migrations/|Cargo\.toml|Cargo\.lock|Dockerfile)' \
-            && echo "changed=true" >> $GITHUB_OUTPUT \
-            || echo "changed=false" >> $GITHUB_OUTPUT
+        with:
+          filters: |
+            backend:
+              - 'src/**'
+              - 'migrations/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'Dockerfile'
 
       - name: Install Railway CLI
-        if: steps.changes.outputs.changed == 'true'
-        run: npm install -g @railway/cli@3
+        if: steps.changes.outputs.backend == 'true'
+        run: npm install -g @railway/cli@4.42.1
 
       - name: Deploy to Railway
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.changes.outputs.backend == 'true'
         run: railway up --service sokopay
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ steps.changes.outputs.backend }}" = "true" ]; then
+            echo "Deploy triggered."
+          else
+            echo "No backend files changed — deploy skipped."
+          fi
