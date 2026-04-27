@@ -6,16 +6,25 @@ on:
     types: [completed]
     branches: [main]
 
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
     name: Deploy to Railway
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success'
+    environment: production
+    timeout-minutes: 15
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 2
 
       - name: Check if backend files changed
@@ -27,7 +36,7 @@ jobs:
 
       - name: Install Railway CLI
         if: steps.changes.outputs.changed == 'true'
-        run: npm install -g @railway/cli
+        run: npm install -g @railway/cli@3
 
       - name: Deploy to Railway
         if: steps.changes.outputs.changed == 'true'
