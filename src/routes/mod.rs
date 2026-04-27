@@ -26,19 +26,17 @@ use tower_governor::{
 
 // ── IP extraction for rate limiting ──────────────────────────────────────────
 
-/// A rate-limit key extractor that prefers trusted proxy headers over the raw
-/// X-Forwarded-For chain.
+/// A rate-limit key extractor that reads the real client IP from trusted proxy headers.
 ///
-/// Why not SmartIpKeyExtractor's approach?
-/// It reads the FIRST (leftmost) XFF entry.  A client can prepend arbitrary
-/// values to XFF before the request reaches any proxy, so an attacker simply
-/// writes their own IP and bypasses per-IP rate limits.
-///
-/// What we trust instead (in order):
-///   1. CF-Connecting-IP — Cloudflare injects this at its edge; clients can't forge it.
+/// Header priority (first match wins):
+///   1. CF-Connecting-IP — Cloudflare injects this; clients cannot forge it.
 ///   2. X-Real-IP        — nginx sets this via `proxy_set_header X-Real-IP $remote_addr`.
-///   3. Rightmost XFF    — the entry appended by the closest/final proxy; harder to spoof.
+///   3. Rightmost XFF    — the entry appended by the closest upstream proxy (e.g. Railway).
+///                         Leftmost entries are client-supplied and must not be trusted.
 ///   4. ConnectInfo      — raw socket peer address (requires into_make_service_with_connect_info).
+///
+/// Falls back to loopback (127.0.0.1) with a warning when no IP can be extracted,
+/// so requests are rate-limited together rather than rejected outright.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TrustedIpExtractor;
 
@@ -50,7 +48,7 @@ impl KeyExtractor for TrustedIpExtractor {
 
         // CF-Connecting-IP: injected by Cloudflare edge, clients cannot forge it.
         if let Some(ip) = headers
-            .get("CF-Connecting-IP")
+            .get("cf-connecting-ip")
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.trim().parse::<std::net::IpAddr>().ok())
         {
@@ -59,23 +57,22 @@ impl KeyExtractor for TrustedIpExtractor {
 
         // X-Real-IP: set by nginx via `proxy_set_header X-Real-IP $remote_addr`.
         if let Some(ip) = headers
-            .get("X-Real-IP")
+            .get("x-real-ip")
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.trim().parse::<std::net::IpAddr>().ok())
         {
             return Ok(ip);
         }
 
-        // X-Forwarded-For leftmost entry: Railway (and most proxies) insert the
-        // real client IP as the first entry. The rightmost entry is the proxy's
-        // own IP, which is shared across all users — using it collapses all
-        // clients into one rate-limit bucket, causing blanket 429s on Railway.
+        // X-Forwarded-For rightmost entry: the entry appended by the closest
+        // upstream proxy. Railway injects the real client IP here. The leftmost
+        // entries may be client-controlled and must not be trusted.
         if let Some(ip) = headers
             .get("x-forwarded-for")
             .and_then(|v| v.to_str().ok())
             .and_then(|s| {
                 s.split(',')
-                    .next()
+                    .next_back()
                     .and_then(|ip| ip.trim().parse::<std::net::IpAddr>().ok())
             })
         {
@@ -93,6 +90,7 @@ impl KeyExtractor for TrustedIpExtractor {
         // No IP found — fall back to loopback so the request is allowed through
         // rather than rejected. Rate limiting without an IP is better than
         // blocking all users whose IP we cannot identify.
+        tracing::warn!("Rate-limit key extraction failed: no IP header found. Falling back to loopback.");
         Ok(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST))
     }
 }
@@ -113,11 +111,11 @@ pub fn router(_state: SharedState) -> Router<SharedState> {
     );
 
     // invoice_governor: POST /payments/invoice hits an external LNURL endpoint
-    // for each request — 2 req/s burst 5 per IP to prevent abuse.
+    // for each request — 5 req/s burst 10 per IP to prevent abuse.
     let invoice_governor_conf = Arc::new(
         GovernorConfigBuilder::default()
-            .per_second(2)
-            .burst_size(5)
+            .per_second(5)
+            .burst_size(10)
             .key_extractor(TrustedIpExtractor)
             .finish()
             .expect("invoice governor config"),
