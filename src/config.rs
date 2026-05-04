@@ -26,8 +26,12 @@ pub struct Config {
     pub coingecko_api_url: String,
     pub rate_cache_seconds: u64,
     pub max_rate_stale_secs: u64,
-    // Storage (image uploads)
-    pub upload_dir: String,
+    // Storage (image uploads - Cloudflare R2 / S3)
+    pub s3_endpoint: String,
+    pub s3_bucket: String,
+    pub s3_access_key: String,
+    pub s3_secret_key: String,
+    pub s3_region: String,
     pub public_base_url: String,
     // Security / CORS
     pub allowed_origins: Vec<String>,
@@ -84,7 +88,11 @@ impl std::fmt::Debug for Config {
             .field("jwt_secret", &"[REDACTED]")
             .field("jwt_expiry_hours", &self.jwt_expiry_hours)
             .field("admin_password_hash", &"[REDACTED]")
-            .field("upload_dir", &self.upload_dir)
+            .field("s3_endpoint", &self.s3_endpoint)
+            .field("s3_bucket", &self.s3_bucket)
+            .field("s3_access_key", &"[REDACTED]")
+            .field("s3_secret_key", &"[REDACTED]")
+            .field("s3_region", &self.s3_region)
             .field("public_base_url", &self.public_base_url)
             .field("allowed_origins", &self.allowed_origins)
             .field("log_format", &self.log_format)
@@ -196,19 +204,12 @@ impl Config {
             );
         }
 
-        // ── Upload directory ──────────────────────────────────────────────────
-        let upload_dir = std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".into());
-
-        // Reject paths that would put uploaded files somewhere dangerous.
-        // UUID filenames prevent directory traversal, but a misconfigured base
-        // path could still end up writing into system directories.
-        if upload_dir == "/" || upload_dir == "." || upload_dir.is_empty() {
-            bail!(
-                "UPLOAD_DIR '{}' is not a safe value. \
-                 Use a dedicated subdirectory such as './uploads'.",
-                upload_dir
-            );
-        }
+        // ── R2 Storage ────────────────────────────────────────────────────────
+        let s3_endpoint = std::env::var("S3_ENDPOINT").context("S3_ENDPOINT is required")?;
+        let s3_bucket = std::env::var("S3_BUCKET").context("S3_BUCKET is required")?;
+        let s3_access_key = std::env::var("S3_ACCESS_KEY").context("S3_ACCESS_KEY is required")?;
+        let s3_secret_key = std::env::var("S3_SECRET_KEY").context("S3_SECRET_KEY is required")?;
+        let s3_region = std::env::var("S3_REGION").unwrap_or_else(|_| "auto".into());
 
         Ok(Self {
             host: std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into()),
@@ -233,7 +234,11 @@ impl Config {
                 .unwrap_or_else(|_| "3600".into())
                 .parse()
                 .context("Invalid MAX_RATE_STALE_SECS")?,
-            upload_dir,
+            s3_endpoint,
+            s3_bucket,
+            s3_access_key,
+            s3_secret_key,
+            s3_region,
             public_base_url: std::env::var("PUBLIC_BASE_URL")
                 .unwrap_or_else(|_| "http://localhost:3001".into()),
             allowed_origins,

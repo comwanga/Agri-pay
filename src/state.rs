@@ -16,6 +16,7 @@ pub struct AppState {
     pub mpesa: Option<MpesaClient>,
     /// Prometheus metrics render handle.  `None` if metrics setup failed at startup.
     pub metrics: Option<PrometheusHandle>,
+    pub s3_client: aws_sdk_s3::Client,
 }
 
 pub type SharedState = Arc<AppState>;

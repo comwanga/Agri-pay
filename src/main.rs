@@ -26,7 +26,6 @@ use axum::{
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
-use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -60,23 +59,6 @@ async fn main() -> Result<()> {
     }
 
     tracing::info!("Starting sokopay v{}", env!("CARGO_PKG_VERSION"));
-
-    // ── Ensure upload directory exists and is writable ───────────────────────
-    tokio::fs::create_dir_all(&config.upload_dir)
-        .await
-        .with_context(|| format!("Failed to create upload directory '{}'", config.upload_dir))?;
-
-    // Verify we can actually write there. A directory that exists but isn't
-    // writable will silently fail image uploads later at the worst moment.
-    let write_probe = std::path::Path::new(&config.upload_dir).join(".write_probe");
-    tokio::fs::write(&write_probe, b"").await.with_context(|| {
-        format!(
-            "Upload directory '{}' exists but is not writable",
-            config.upload_dir
-        )
-    })?;
-    tokio::fs::remove_file(&write_probe).await.ok(); // clean up; non-fatal if it fails
-    tracing::info!("Upload directory verified writable: {}", config.upload_dir);
 
     // ── Shared HTTP client ────────────────────────────────────────────────────
     let http = Client::builder()
@@ -129,6 +111,26 @@ async fn main() -> Result<()> {
         tracing::info!("Transactional email not configured — SMTP_HOST not set");
     }
 
+    // ── S3 / Cloudflare R2 Client ──────────────────────────────────────────────
+    let s3_credentials = aws_credential_types::Credentials::new(
+        &config.s3_access_key,
+        &config.s3_secret_key,
+        None,
+        None,
+        "sokopay",
+    );
+    let s3_config = aws_config::SdkConfig::builder()
+        .credentials_provider(aws_credential_types::credentials::SharedCredentialsProvider::new(s3_credentials))
+        .region(aws_config::Region::new(config.s3_region.clone()))
+        .endpoint_url(&config.s3_endpoint)
+        // Required for some R2/S3-compatible backends: path style endpoints
+        .build();
+    
+    let mut s3_builder = aws_sdk_s3::config::Builder::from(&s3_config);
+    s3_builder = s3_builder.force_path_style(true);
+    let s3_client = aws_sdk_s3::Client::from_conf(s3_builder.build());
+    tracing::info!("S3/R2 client initialized against: {}", config.s3_endpoint);
+
     let state = Arc::new(AppState {
         db: pool.clone(),
         config: config.clone(),
@@ -137,6 +139,7 @@ async fn main() -> Result<()> {
         lnurl,
         mpesa,
         metrics: metrics_handle,
+        s3_client,
     });
 
     // ── Background workers ────────────────────────────────────────────────────
@@ -175,7 +178,6 @@ async fn main() -> Result<()> {
     // as required by the LNURL-pay spec (LUD-06).
     let app = Router::new()
         .nest("/api", routes::router(state.clone()))
-        .nest_service("/uploads", ServeDir::new(&config.upload_dir))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         // Request ID layers sit outside the trace layer so the ID is stamped on

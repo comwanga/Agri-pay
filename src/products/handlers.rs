@@ -845,12 +845,25 @@ pub async fn upload_image(
 
     let file_name = format!("{}_{}.{}", product_id, Uuid::new_v4(), ext);
     let storage_key = file_name.clone();
-    let file_path = format!("{}/{}", state.config.upload_dir, file_name);
-    let url = format!("{}/uploads/{}", state.config.public_base_url, file_name);
+    let url = format!("{}/{}", state.config.public_base_url.trim_end_matches('/'), storage_key);
 
-    tokio::fs::write(&file_path, &data)
+    let content_type = match ext {
+        "jpg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => "application/octet-stream",
+    };
+
+    state.s3_client
+        .put_object()
+        .bucket(&state.config.s3_bucket)
+        .key(&storage_key)
+        .body(aws_sdk_s3::primitives::ByteStream::from(data.to_vec()))
+        .content_type(content_type)
+        .send()
         .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to save image: {}", e)))?;
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to upload to S3/R2: {}", e)))?;
 
     let is_primary = image_count == 0;
 
@@ -913,9 +926,14 @@ pub async fn delete_image(
         .execute(&state.db)
         .await?;
 
-    let file_path = format!("{}/{}", state.config.upload_dir, img.storage_key);
-    if let Err(e) = tokio::fs::remove_file(&file_path).await {
-        tracing::warn!("Could not delete image file {}: {}", file_path, e);
+    if let Err(e) = state.s3_client
+        .delete_object()
+        .bucket(&state.config.s3_bucket)
+        .key(&img.storage_key)
+        .send()
+        .await
+    {
+        tracing::warn!("Could not delete image {} from S3: {}", img.storage_key, e);
     }
 
     Ok(Json(serde_json::json!({ "deleted": true })))
